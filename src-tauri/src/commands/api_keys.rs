@@ -3,7 +3,7 @@
 use tauri::State;
 use crate::state::AppState;
 use crate::config::save_config_to_file;
-use crate::types::{GeminiApiKey, ClaudeApiKey, CodexApiKey, VertexApiKey, OpenAICompatibleProvider};
+use crate::types::{GeminiApiKey, ClaudeApiKey, CodexApiKey, VertexApiKey, OpenAICompatibleProvider, ModelMapping};
 
 // Convert Management API kebab-case keys to camelCase for frontend
 // The Management API returns data wrapped in an object like: { "gemini-api-key": [...] }
@@ -45,6 +45,44 @@ fn convert_to_management_format<T: serde::Serialize>(data: &T) -> Result<serde_j
         .replace("\"excludedModels\"", "\"excluded-models\"")
         .replace("\"apiKeyEntries\"", "\"api-key-entries\"");
     serde_json::from_str(&converted).map_err(|e| e.to_string())
+}
+
+fn normalize_model_mappings(models: Option<&Vec<ModelMapping>>) -> Vec<ModelMapping> {
+    models
+        .map(|items| {
+            items
+                .iter()
+                .map(|model| {
+                    let alias = model
+                        .alias
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|alias| !alias.is_empty())
+                        .unwrap_or(model.name.as_str())
+                        .to_string();
+
+                    ModelMapping {
+                        name: model.name.clone(),
+                        alias: Some(alias),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn normalize_openai_compatible_providers(providers: &[OpenAICompatibleProvider]) -> Vec<OpenAICompatibleProvider> {
+    providers
+        .iter()
+        .map(|provider| OpenAICompatibleProvider {
+            name: provider.name.clone(),
+            base_url: provider.base_url.clone(),
+            api_key_entries: provider.api_key_entries.clone(),
+            models: Some(normalize_model_mappings(provider.models.as_ref())),
+            headers: provider.headers.clone(),
+            prefix: provider.prefix.clone(),
+        })
+        .collect()
 }
 
 // ============================================
@@ -372,9 +410,10 @@ pub async fn get_openai_compatible_providers(state: State<'_, AppState>) -> Resu
 pub async fn set_openai_compatible_providers(state: State<'_, AppState>, providers: Vec<OpenAICompatibleProvider>) -> Result<(), String> {
     let port = state.config.lock().unwrap().port;
     let url = crate::get_management_url(port, "openai-compatibility");
+    let normalized_providers = normalize_openai_compatible_providers(&providers);
     
     let client = crate::build_management_client();
-    let body = convert_to_management_format(&providers)?;
+    let body = convert_to_management_format(&normalized_providers)?;
     
     let response = client
         .put(&url)
@@ -393,18 +432,16 @@ pub async fn set_openai_compatible_providers(state: State<'_, AppState>, provide
     // Persist to local config for restart persistence
     {
         let mut config = state.config.lock().unwrap();
-        config.amp_openai_providers = providers.iter().map(|p| {
+        config.amp_openai_providers = normalized_providers.iter().map(|p| {
             crate::types::amp::AmpOpenAIProvider {
                 id: uuid::Uuid::new_v4().to_string(),
                 name: p.name.clone(),
                 base_url: p.base_url.clone(),
                 api_key: p.api_key_entries.first().map(|e| e.api_key.clone()).unwrap_or_default(),
-                models: p.models.as_ref().map(|m| {
-                    m.iter().map(|model| crate::types::amp::AmpOpenAIModel {
-                        name: model.name.clone(),
-                        alias: model.alias.clone().unwrap_or_default(),
-                    }).collect()
-                }).unwrap_or_default(),
+                models: normalize_model_mappings(p.models.as_ref()).into_iter().map(|model| crate::types::amp::AmpOpenAIModel {
+                    name: model.name,
+                    alias: model.alias.unwrap_or_default(),
+                }).collect(),
             }
         }).collect();
     }

@@ -213,6 +213,21 @@ pub fn detect_cli_agents(state: State<AppState>) -> Vec<AgentStatus> {
 // Helper to check if a command exists by checking common installation paths
 // Note: Using `which` command doesn't work in production builds (sandboxed macOS app)
 // so we check common binary locations directly
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn wsl_detection_opt_in(value: Option<&str>) -> bool {
+    matches!(
+        value
+            .map(str::trim)
+            .map(|v| v.to_ascii_lowercase()),
+        Some(v) if matches!(v.as_str(), "1" | "true" | "yes" | "on")
+    )
+}
+
+#[cfg(target_os = "windows")]
+fn should_probe_wsl_paths() -> bool {
+    wsl_detection_opt_in(std::env::var("PROXYPAL_ENABLE_WSL_DETECTION").ok().as_deref())
+}
+
 fn which_exists(cmd: &str) -> bool {
     let home = dirs::home_dir().unwrap_or_default();
 
@@ -292,12 +307,10 @@ fn which_exists(cmd: &str) -> bool {
             paths.push(std::path::PathBuf::from(program_files).join("Git\\cmd"));
         }
 
-        // Windows: detect WSL-installed binaries via UNC paths (\\wsl.localhost\<distro>\...).
-        // PERF: Use a fast file-existence check for wsl.exe instead of spawning `wsl --status`,
-        // which can take 1-2 seconds when WSL is not installed or initialising.
-        let wsl_available = std::path::Path::new(r"C:\Windows\System32\wsl.exe").exists();
-
-        if wsl_available {
+        // Windows: WSL UNC probing can trigger system prompts/network resolution on machines where
+        // WSL is present but not configured. Keep WSL binary discovery opt-in for normal UI-driven
+        // agent detection and only probe those paths when explicitly requested.
+        if should_probe_wsl_paths() {
             // WSL paths accessible via \\wsl.localhost\<distro>\home\<user> or \\wsl$\<distro>\home\<user>
             let wsl_distros = ["Ubuntu", "Ubuntu-22.04", "Ubuntu-24.04", "Debian"];
             let username = home.file_name().unwrap_or_default().to_string_lossy();
@@ -1656,5 +1669,20 @@ mod tests {
         assert!(line.starts_with('#'), "Commented line should start with '#'");
         assert!(line.contains("BAZ"), "Commented line should contain the key");
         assert!(line.contains("qux"), "Commented line should contain the value");
+    }
+
+    #[test]
+    fn wsl_detection_opt_in_is_disabled_by_default() {
+        assert!(!wsl_detection_opt_in(None));
+        assert!(!wsl_detection_opt_in(Some("0")));
+        assert!(!wsl_detection_opt_in(Some("false")));
+        assert!(!wsl_detection_opt_in(Some("off")));
+    }
+
+    #[test]
+    fn wsl_detection_opt_in_accepts_truthy_values() {
+        for value in ["1", "true", "TRUE", "yes", "on"] {
+            assert!(wsl_detection_opt_in(Some(value)), "expected {value} to enable WSL detection");
+        }
     }
 }
