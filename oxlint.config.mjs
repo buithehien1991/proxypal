@@ -45,7 +45,7 @@ export default defineConfig({
     "@nkzw/require-use-effect-arguments": "off",
     // --- Project-specific adjustments ---
     // Allow console in non-production code (we use toast for user-facing errors)
-    "no-console": "warn",
+    "no-console": "off",
     // Array<T> style — keep existing T[] style
     "@typescript-eslint/array-type": "off",
     // SolidJS utility functions inside components are idiomatic (not closures, just colocation)

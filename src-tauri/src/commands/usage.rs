@@ -3,12 +3,16 @@
 //! Extracted from lib.rs — handles usage statistics, request history,
 //! and syncing usage data from the CLIProxyAPI management API.
 
-use crate::helpers::history::{load_aggregate, load_request_history, save_aggregate, save_request_history};
+use crate::helpers::history::{
+    load_aggregate, load_request_history, save_aggregate, save_request_history, update_timeseries,
+};
 use crate::state::AppState;
 use crate::types::{
-    ModelStats, ModelUsage, ProviderUsage, RequestHistory, RequestLog, TimeSeriesPoint, UsageStats,
+    Aggregate, ModelStats, ModelUsage, ProviderUsage, RequestHistory, RequestLog, TimeSeriesPoint,
+    UsageStats,
 };
 use crate::utils::estimate_request_cost;
+use serde::Deserialize;
 use tauri::State;
 
 // Live usage data from Go backend
@@ -21,6 +25,279 @@ struct LiveUsageData {
     model_tokens: std::collections::HashMap<String, u64>,
     model_token_breakdown: std::collections::HashMap<String, (u64, u64, u64)>, // (input, output, cached)
     tokens_by_hour: Vec<TimeSeriesPoint>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct UsageQueueDetail {
+    #[serde(default, alias = "InputTokens", alias = "inputTokens", alias = "input_tokens")]
+    input_tokens: i64,
+    #[serde(default, alias = "OutputTokens", alias = "outputTokens", alias = "output_tokens")]
+    output_tokens: i64,
+    #[serde(
+        default,
+        alias = "ReasoningTokens",
+        alias = "reasoningTokens",
+        alias = "reasoning_tokens"
+    )]
+    reasoning_tokens: i64,
+    #[serde(default, alias = "CachedTokens", alias = "cachedTokens", alias = "cached_tokens")]
+    cached_tokens: i64,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct UsageQueueRecord {
+    #[serde(default, alias = "Provider", alias = "provider")]
+    provider: String,
+    #[serde(default, alias = "Model", alias = "model")]
+    model: String,
+    #[serde(default, alias = "Alias", alias = "alias")]
+    alias: String,
+    #[serde(default, alias = "RequestedAt", alias = "requestedAt", alias = "requested_at")]
+    requested_at: String,
+    #[serde(default, alias = "Failed", alias = "failed")]
+    failed: bool,
+    #[serde(default, alias = "Detail", alias = "detail")]
+    detail: UsageQueueDetail,
+}
+
+fn parse_usage_queue_records(value: serde_json::Value) -> Result<Vec<UsageQueueRecord>, String> {
+    let items = value
+        .as_array()
+        .ok_or("Usage queue response must be an array")?;
+    let mut records = Vec::with_capacity(items.len());
+
+    for item in items {
+        if item.is_null() {
+            continue;
+        }
+
+        let record = match item {
+            serde_json::Value::String(raw) => {
+                serde_json::from_str::<UsageQueueRecord>(raw).map_err(|e| e.to_string())?
+            }
+            _ => serde_json::from_value::<UsageQueueRecord>(item.clone()).map_err(|e| e.to_string())?,
+        };
+        records.push(record);
+    }
+
+    Ok(records)
+}
+
+fn queue_record_timestamp(record: &UsageQueueRecord) -> chrono::DateTime<chrono::Local> {
+    chrono::DateTime::parse_from_rfc3339(record.requested_at.trim())
+        .map(|dt| dt.with_timezone(&chrono::Local))
+        .unwrap_or_else(|_| chrono::Local::now())
+}
+
+fn usage_detail_to_totals(detail: &UsageQueueDetail) -> (u64, u64, u64, u64) {
+    let input = detail.input_tokens.max(0) as u64;
+    let output = detail.output_tokens.max(0) as u64 + detail.reasoning_tokens.max(0) as u64;
+    let cached = detail.cached_tokens.max(0) as u64;
+    let total = input + output;
+    (input, output, cached, total)
+}
+
+fn trim_timeseries(series: &mut Vec<TimeSeriesPoint>, max_len: usize) {
+    series.sort_by(|a, b| a.label.cmp(&b.label));
+    if series.len() > max_len {
+        *series = series.split_off(series.len() - max_len);
+    }
+}
+
+fn apply_usage_queue_records(
+    records: &[UsageQueueRecord],
+    history: &mut RequestHistory,
+    agg: &mut Aggregate,
+) {
+    for record in records {
+        let timestamp = queue_record_timestamp(record);
+        let day_label = timestamp.format("%Y-%m-%d").to_string();
+        let hour_label = timestamp.format("%Y-%m-%dT%H").to_string();
+        let model_name = if record.model.trim().is_empty() {
+            record.alias.trim().to_string()
+        } else {
+            record.model.trim().to_string()
+        };
+        let provider_name = if record.provider.trim().is_empty() {
+            "unknown".to_string()
+        } else {
+            record.provider.trim().to_string()
+        };
+
+        let (input_tokens, output_tokens, cached_tokens, total_tokens) =
+            usage_detail_to_totals(&record.detail);
+
+        history.total_request_count += 1;
+        if !record.failed {
+            history.total_success_count += 1;
+        }
+
+        agg.total_requests += 1;
+        if record.failed {
+            agg.total_failure_count += 1;
+        } else {
+            agg.total_success_count += 1;
+        }
+        update_timeseries(&mut agg.requests_by_day, &day_label, 1);
+        update_timeseries(&mut agg.requests_by_hour, &hour_label, 1);
+
+        if total_tokens > 0 || cached_tokens > 0 {
+            history.total_tokens_in += input_tokens;
+            history.total_tokens_out += output_tokens;
+            history.total_tokens_cached += cached_tokens;
+            history.total_cost_usd += estimate_request_cost(
+                &model_name,
+                input_tokens.min(u32::MAX as u64) as u32,
+                output_tokens.min(u32::MAX as u64) as u32,
+            );
+            update_timeseries(&mut history.tokens_by_day, &day_label, total_tokens);
+            update_timeseries(&mut history.tokens_by_hour, &hour_label, total_tokens);
+
+            agg.total_tokens_in += input_tokens;
+            agg.total_tokens_out += output_tokens;
+            agg.total_tokens_cached += cached_tokens;
+            agg.total_cost_usd += estimate_request_cost(
+                &model_name,
+                input_tokens.min(u32::MAX as u64) as u32,
+                output_tokens.min(u32::MAX as u64) as u32,
+            );
+            update_timeseries(&mut agg.tokens_by_day, &day_label, total_tokens);
+            update_timeseries(&mut agg.tokens_by_hour, &hour_label, total_tokens);
+        }
+
+        if !model_name.is_empty() && model_name != "unknown" {
+            let model_stats = agg
+                .model_stats
+                .entry(model_name)
+                .or_insert_with(Default::default);
+            model_stats.requests += 1;
+            if !record.failed {
+                model_stats.success_count += 1;
+            }
+            model_stats.tokens += total_tokens;
+            model_stats.input_tokens += input_tokens;
+            model_stats.output_tokens += output_tokens;
+            model_stats.cached_tokens += cached_tokens;
+        }
+
+        let provider_stats = agg
+            .provider_stats
+            .entry(provider_name)
+            .or_insert_with(Default::default);
+        provider_stats.requests += 1;
+        if !record.failed {
+            provider_stats.success_count += 1;
+        }
+        provider_stats.tokens += total_tokens;
+        provider_stats.input_tokens += input_tokens;
+        provider_stats.output_tokens += output_tokens;
+        provider_stats.cached_tokens += cached_tokens;
+    }
+
+    trim_timeseries(&mut agg.requests_by_day, 14);
+    trim_timeseries(&mut agg.requests_by_hour, 168);
+    trim_timeseries(&mut history.tokens_by_day, 14);
+    trim_timeseries(&mut history.tokens_by_hour, 168);
+    trim_timeseries(&mut agg.tokens_by_day, 14);
+    trim_timeseries(&mut agg.tokens_by_hour, 168);
+}
+
+fn sync_usage_from_queue_blocking(port: u16) -> Result<(), String> {
+    const BATCH_SIZE: usize = 500;
+    const MAX_BATCHES: usize = 20;
+
+    let client = reqwest::blocking::Client::new();
+    let mut history = load_request_history();
+    let mut agg = load_aggregate();
+
+    for _ in 0..MAX_BATCHES {
+        let url = format!(
+            "http://127.0.0.1:{}/v0/management/usage-queue?count={}",
+            port, BATCH_SIZE
+        );
+        let response = client
+            .get(&url)
+            .header("X-Management-Key", &crate::get_management_key())
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .map_err(|e| format!("usage queue request failed: {}", e))?;
+
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err("usage queue endpoint unavailable".to_string());
+        }
+
+        if !response.status().is_success() {
+            return Err(format!("usage queue HTTP {}", response.status()));
+        }
+
+        let body: serde_json::Value = response.json().map_err(|e| e.to_string())?;
+        let records = parse_usage_queue_records(body)?;
+        let fetched = records.len();
+        if fetched == 0 {
+            break;
+        }
+
+        apply_usage_queue_records(&records, &mut history, &mut agg);
+
+        if fetched < BATCH_SIZE {
+            break;
+        }
+    }
+
+    save_request_history(&history)?;
+    save_aggregate(&agg)?;
+    Ok(())
+}
+
+async fn sync_usage_from_queue_async(port: u16) -> Result<RequestHistory, String> {
+    const BATCH_SIZE: usize = 500;
+    const MAX_BATCHES: usize = 20;
+
+    let client = crate::build_management_client();
+    let mut history = load_request_history();
+    let mut agg = load_aggregate();
+
+    for _ in 0..MAX_BATCHES {
+        let url = format!(
+            "http://127.0.0.1:{}/v0/management/usage-queue?count={}",
+            port, BATCH_SIZE
+        );
+        let response = client
+            .get(&url)
+            .header("X-Management-Key", &crate::get_management_key())
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await
+            .map_err(|e| format!("Failed to fetch usage queue: {}", e))?;
+
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err("Usage queue endpoint unavailable".to_string());
+        }
+
+        if !response.status().is_success() {
+            return Err(format!("Usage queue API returned status: {}", response.status()));
+        }
+
+        let body: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse usage queue response: {}", e))?;
+        let records = parse_usage_queue_records(body)?;
+        let fetched = records.len();
+        if fetched == 0 {
+            break;
+        }
+
+        apply_usage_queue_records(&records, &mut history, &mut agg);
+
+        if fetched < BATCH_SIZE {
+            break;
+        }
+    }
+
+    save_request_history(&history)?;
+    save_aggregate(&agg)?;
+    Ok(history)
 }
 
 // Fetch live usage stats from Go backend (blocking version for sync context)
@@ -154,6 +431,15 @@ fn sync_usage_from_proxy_blocking(port: u16) {
     };
 
     if !response.status().is_success() {
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            if let Err(e) = sync_usage_from_queue_blocking(port) {
+                eprintln!(
+                    "[usage] sync_usage_from_proxy_blocking: fallback usage queue failed: {}",
+                    e
+                );
+            }
+            return;
+        }
         eprintln!(
             "[usage] sync_usage_from_proxy_blocking: HTTP {}",
             response.status()
@@ -172,7 +458,12 @@ fn sync_usage_from_proxy_blocking(port: u16) {
     let usage = match body.get("usage") {
         Some(u) => u,
         None => {
-            eprintln!("[usage] sync_usage_from_proxy_blocking: missing 'usage' field");
+            if let Err(e) = sync_usage_from_queue_blocking(port) {
+                eprintln!(
+                    "[usage] sync_usage_from_proxy_blocking: missing 'usage' field and queue fallback failed: {}",
+                    e
+                );
+            }
             return;
         }
     };
@@ -705,6 +996,9 @@ pub async fn sync_usage_from_proxy(state: State<'_, AppState>) -> Result<Request
         .map_err(|e| format!("Failed to fetch usage: {}. Is the proxy running?", e))?;
 
     if !response.status().is_success() {
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return sync_usage_from_queue_async(port).await;
+        }
         return Err(format!(
             "Usage API returned status: {}",
             response.status()
@@ -719,7 +1013,11 @@ pub async fn sync_usage_from_proxy(state: State<'_, AppState>) -> Result<Request
     // Extract token totals from CLIProxyAPI's usage response
     let usage = body
         .get("usage")
-        .ok_or("Missing 'usage' field in response")?;
+        .ok_or_else(|| "Missing 'usage' field in response".to_string());
+    let usage = match usage {
+        Ok(value) => value,
+        Err(_) => return sync_usage_from_queue_async(port).await,
+    };
 
     // Calculate input/output token split from APIs data
     let mut total_input: u64 = 0;
@@ -1057,6 +1355,13 @@ pub async fn export_usage_stats(
         .await
         .map_err(|e| format!("Failed to export usage: {}. Is the proxy running?", e))?;
 
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err(
+            "Usage export is not available in the bundled mainline CLIProxyAPI sidecar."
+                .to_string(),
+        );
+    }
+
     if !response.status().is_success() {
         return Err(format!(
             "Export API returned status: {}",
@@ -1095,6 +1400,13 @@ pub async fn import_usage_stats(
         .send()
         .await
         .map_err(|e| format!("Failed to import usage: {}. Is the proxy running?", e))?;
+
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err(
+            "Usage import is not available in the bundled mainline CLIProxyAPI sidecar."
+                .to_string(),
+        );
+    }
 
     if !response.status().is_success() {
         let status = response.status();

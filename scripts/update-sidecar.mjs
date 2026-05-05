@@ -121,22 +121,31 @@ function getCurrentTarget() {
 
 function getAssetInfo(target, version, assetPrefix) {
   const map = {
-    "cli-proxy-api-aarch64-apple-darwin": [`${assetPrefix}_${version}_darwin_arm64.tar.gz`, "tar"],
-    "cli-proxy-api-x86_64-apple-darwin": [`${assetPrefix}_${version}_darwin_amd64.tar.gz`, "tar"],
+    "cli-proxy-api-aarch64-apple-darwin": [[
+      `${assetPrefix}_${version}_darwin_aarch64.tar.gz`,
+      `${assetPrefix}_${version}_darwin_arm64.tar.gz`,
+    ], "tar"],
+    "cli-proxy-api-x86_64-apple-darwin": [[`${assetPrefix}_${version}_darwin_amd64.tar.gz`], "tar"],
     "cli-proxy-api-x86_64-unknown-linux-gnu": [
-      `${assetPrefix}_${version}_linux_amd64.tar.gz`,
+      [`${assetPrefix}_${version}_linux_amd64.tar.gz`],
       "tar",
     ],
     "cli-proxy-api-aarch64-unknown-linux-gnu": [
-      `${assetPrefix}_${version}_linux_arm64.tar.gz`,
+      [
+        `${assetPrefix}_${version}_linux_aarch64.tar.gz`,
+        `${assetPrefix}_${version}_linux_arm64.tar.gz`,
+      ],
       "tar",
     ],
     "cli-proxy-api-x86_64-pc-windows-msvc.exe": [
-      `${assetPrefix}_${version}_windows_amd64.zip`,
+      [`${assetPrefix}_${version}_windows_amd64.zip`],
       "zip",
     ],
     "cli-proxy-api-aarch64-pc-windows-msvc.exe": [
-      `${assetPrefix}_${version}_windows_arm64.zip`,
+      [
+        `${assetPrefix}_${version}_windows_aarch64.zip`,
+        `${assetPrefix}_${version}_windows_arm64.zip`,
+      ],
       "zip",
     ],
   };
@@ -168,11 +177,18 @@ function findBinary(dir, { includeExe = false } = {}) {
   return null;
 }
 
-async function downloadTarget(target, version, channelConfig) {
+async function downloadTarget(target, version, channelConfig, releaseAssets = null) {
   const assetInfo = getAssetInfo(target, version, channelConfig.assetPrefix);
   if (!assetInfo) throw new Error(`Unknown target: ${target}`);
 
-  const [assetName, archiveType] = assetInfo;
+  const [assetNames, archiveType] = assetInfo;
+  const assetName =
+    assetNames.find((name) => !releaseAssets || releaseAssets.has(name)) || null;
+  if (!assetName) {
+    throw new Error(
+      `No matching asset found for ${target}. Tried: ${assetNames.join(", ")}`,
+    );
+  }
   const url = `https://github.com/${channelConfig.repo}/releases/download/v${version}/${assetName}`;
 
   console.log(`Downloading ${assetName}...`);
@@ -247,6 +263,7 @@ async function main() {
   }
   const release = await apiRes.json();
   const version = release.tag_name.replace(/^v/, "");
+  const releaseAssets = new Set((release.assets || []).map((asset) => asset.name));
   console.log(`${channelConfig.label} channel: ${channel}`);
   console.log(`${channelConfig.label} repo: ${channelConfig.repo}`);
   console.log(`${channelConfig.label} version: ${version}`);
@@ -255,7 +272,7 @@ async function main() {
 
   if (requestedTarget) {
     // Download specific target
-    await downloadTarget(requestedTarget, version, channelConfig);
+    await downloadTarget(requestedTarget, version, channelConfig, releaseAssets);
   } else {
     // Download for current platform only
     const target = getCurrentTarget();
@@ -264,7 +281,7 @@ async function main() {
       console.log(`Binary exists: ${destPath} (use --force to re-download)`);
       return;
     }
-    await downloadTarget(target, version, channelConfig);
+    await downloadTarget(target, version, channelConfig, releaseAssets);
   }
 }
 
