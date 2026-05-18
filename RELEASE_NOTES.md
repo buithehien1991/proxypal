@@ -1,61 +1,51 @@
-# ProxyPal v0.4.34
+# ProxyPal v0.4.35
 
-**Released:** 2026-05-12
+**Released:** 2026-05-18
 
-## Sidecar Upgrade: CLIProxyAPI v6.10.8 → v7.0.2
+## Sidecar Upgrade: CLIProxyAPI v7.0.2 → v7.1.11
 
-This release upgrades the bundled CLIProxyAPI sidecar from **v6.10.8** (built May 4, 2026) to **v7.0.2** (released May 10, 2026), jumping 4 releases including a major version bump.
+This release upgrades the bundled CLIProxyAPI sidecar from **v7.0.2** (built May 10) to **v7.1.11** (released May 18), jumping **22 releases** including a full minor version with 11 patches shipped in the last 48 hours.
 
 ### Why this matters
 
-The bundled sidecar was 12 days stale while upstream ships daily. v7.0.2 has been battle-tested (2,677+ downloads on linux_amd64 alone) with 2 patch releases on top of v7.0.0.
+The bundled binary was 8 days stale while upstream shipped an entire minor version (7.1.0 → 7.1.11) containing critical provider integrations, bugfixes, and payload routing improvements. This catches ProxyPal up to the latest stable release.
 
-### What changed in CLIProxyAPI (v6.10.9 → v7.0.2)
+### What changed in CLIProxyAPI (v7.0.3 → v7.1.11)
 
-**Stability fixes (v6.10.9 → v7.0.2):**
+**New provider integrations:**
 
-- Codex WebSocket upstream disconnect handling (prevents zombie sessions)
-- Amp thread actors route fix
-- OpenAI → Kimi continuous function_call conversion fix
-- OpenAI streaming: null usage chunks now ignored, empty responses stream repaired
-- Claude OAuth refresh 429 backoff deduplication
-- Gemini CLI project ID from onboarding response
-- Goroutine leak prevention in streaming executors
-- Antigravity cancellation error preservation
+- **xAI (Grok) support** — OAuth2 with PKCE + token persistence (v7.1.0), Grok video model support (v7.1.2), namespace tools + tool normalization (v7.1.5), default missing function tool parameters fix (v7.1.6)
+- **Codex client models** exposed via OpenAI API (v7.1.3–4) — ProxyPal's OpenAI-compatible routing gets Codex models for free
 
-**New v7 features (available for future ProxyPal integration):**
+**Stability fixes:**
 
-- Remote home control plane config loading (multi-device sync potential)
-- Per-auth `disable_cooling` override support
-- `disabled` flag persistence in token storage (survives restarts)
-- Home auth dispatch usage statistics
-- Home request-log forwarding
-- WebSocket session reuse for home auths with caching (v7.0.1)
-- Detailed logging for home config changes (v7.0.2)
+- TCP accept loop deadlock prevention — idle connections no longer block (v7.0.3)
+- Sniff deadline clearing before Redis handler entry (v7.0.3)
+- Registry model parse panic downgraded to warning (v7.1.7)
+- xAI tool param defaults for missing function parameters (v7.1.6)
+- Payload rule resolution with dynamic path support (v7.1.7–8)
 
-**Breaking change in v7.0.0 (no impact on ProxyPal):**
+**Other:**
 
-- Removed `ClaudeCodeSessionAffinity` — **ProxyPal does not reference this, zero impact verified**
+- Detailed token breakdown in usage tracking (v7.0.3)
+- Local management password validation + spoofed IP rejection (v7.1.10)
+- New CLI flags: `-xai-login`, `-home-disable-cluster-discovery`
+- `-home` flag now supports `redis://` and `rediss://` URL formats
 
 ### ProxyPal code changes
 
-- `src-tauri/binaries/cli-proxy-api-aarch64-apple-darwin` — v6.10.8 → v7.0.2 binary
-- `src-tauri/Cargo.toml:3` — version 0.4.33 → 0.4.34
-- `src-tauri/tauri.conf.json:4` — version 0.4.33 → 0.4.34
-- `package.json` — version 0.4.33 → 0.4.34
+- `src-tauri/binaries/cli-proxy-api-aarch64-apple-darwin` — v7.0.2 → v7.1.11 binary
+- `src-tauri/Cargo.toml:3` — version 0.4.34 → 0.4.35
+- `src-tauri/tauri.conf.json:4` — version 0.4.34 → 0.4.35
+- `package.json` — version 0.4.34 → 0.4.35
 
-### No API breakage
+### Breaking changes check
 
-All management API endpoints used by ProxyPal remain backward-compatible:
-
-- `GET/PATCH /v0/management/*` — unchanged
-- `GET /api/auth/status` — unchanged
-- `GET /v1/models` — unchanged
+Zero breakage verified. The v7.1.9 `FormProtocol` → `FromProtocol` rename is a Go internal struct change — ProxyPal never references either symbol. All CLI flags used by ProxyPal (`--config`, `WRITABLE_PATH`) are stable across all 7.1.x.
 
 ### Verification
 
-- Binary verified: `CLIProxyAPI Version: 7.0.2, Commit: 1fca942b, BuiltAt: 2026-05-10T12:57:00Z`
-- Management API compatibility: all 23 endpoints checked, zero regressions
+- Binary verified: `CLIProxyAPI Version: 7.1.11, Commit: 66c5d60b, BuiltAt: 2026-05-18T03:02:08Z`
 - No code changes required beyond binary replacement and version bump
 
 ---
