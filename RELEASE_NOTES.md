@@ -29,12 +29,12 @@ This release brings model additions, quota reliability improvements, and fixes f
 
 ### Issues closed
 
-| # | Description | 
-|---|---|
+| #    | Description                                             |
+| ---- | ------------------------------------------------------- |
 | #220 | Quota desync for Gemini 3.5 Flash under Antigravity 2.0 |
-| #218 | OPUS 4.6/4.7 for Kiro |
-| #217 | GPT-5.5 routing (CLIProxyAPI limitation, documented) |
-| #219 | Claude Desktop support (configuration guidance) |
+| #218 | OPUS 4.6/4.7 for Kiro                                   |
+| #217 | GPT-5.5 routing (CLIProxyAPI limitation, documented)    |
+| #219 | Claude Desktop support (configuration guidance)         |
 
 ### Verification
 

@@ -1,6 +1,6 @@
 import { createMemo, createSignal } from "solid-js";
-import { addRequestToHistory, getRequestHistory } from "../lib/tauri";
 import { invalidateQuotaCache } from "../lib/quotaCache";
+import { addRequestToHistory, getRequestHistory } from "../lib/tauri";
 
 import type { RequestHistory, RequestLog } from "../lib/tauri";
 
