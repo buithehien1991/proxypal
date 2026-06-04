@@ -63,13 +63,14 @@ This release also resolves a CI regression that caused the "Frontend checks (ts 
 
 Two independent issues:
 
-1. **pnpm workspace mode** — The `pnpm-workspace.yaml` file was introduced in v0.4.37 with `allowBuilds` (not a valid workspace key). Subsequent CI fix attempts added `packages: ['.']` and `onlyBuiltDependencies: ['esbuild']`, which broke pnpm v9 CI — `onlyBuiltDependencies` was introduced in pnpm v10, and switching to workspace mode changed how pnpm resolves transitive dependencies.
+1. **pnpm workspace mode** — The `pnpm-workspace.yaml` file was introduced in v0.4.37 with `allowBuilds` (not a valid workspace key). pnpm v9 enters workspace mode when this file exists, even with unknown keys, and requires a `packages` field. Subsequent CI fix attempts added `packages: ['.']` and `onlyBuiltDependencies: ['esbuild']`, which broke pnpm v9 further — `onlyBuiltDependencies` was introduced in pnpm v10.
 
 2. **oxlint JS plugin resolution** — `@nkzw/oxlint-config` declares 5 JavaScript ESLint plugins (e.g., `eslint-plugin-react-hooks`). In pnpm v10+, these transitive dependencies live in `.pnpm/` virtual store and aren't accessible to Node.js's `require()` from the project root. oxlint's Rust-to-JS plugin loader uses internal `require()`, so it couldn't load them.
 
 ### Fixes
 
-- **pnpm-workspace.yaml** — now contains only `allowBuilds: { esbuild: true }` for local pnpm v11 compat. CI's pnpm v9 ignores the unknown key, stays in non-workspace mode.
+- **pnpm-workspace.yaml** — **deleted from the repository**. No workspace file means pnpm v9 CI stays in non-workspace mode. Local pnpm v11 users create it automatically via `pnpm approve-builds esbuild`.
+- **`.npmrc`** — added with `onlyBuiltDependencies[]=esbuild` for local pnpm v11 build approval (ignored by pnpm v9 CI).
 - **package.json** — added 5 oxlint JS plugins as **direct devDependencies** so pnpm links them at `node_modules/` level:
   - `@nkzw/eslint-plugin`
   - `eslint-plugin-no-only-tests`
@@ -92,7 +93,8 @@ Two independent issues:
 - `src-tauri/tauri.conf.json:4` — version 0.4.37 → 0.4.38
 - `package.json` — version 0.4.37 → 0.4.38; add 5 oxlint JS plugin devDeps
 - `.gitignore` — add `.pi/tasks/` to ignore list
-- `pnpm-workspace.yaml` — create with `allowBuilds` for local pnpm v11 compat
+- `.npmrc` — add `onlyBuiltDependencies[]=esbuild` for local pnpm v11 compat
+- `pnpm-workspace.yaml` — removed (pnpm v9 CI enters workspace mode when file exists, even with unknown keys)
 
 ### Breaking changes check
 
