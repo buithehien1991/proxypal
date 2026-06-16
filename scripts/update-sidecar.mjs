@@ -18,6 +18,40 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const BINARIES_DIR = join(__dirname, "..", "src-tauri", "binaries");
+const SIDECAR_VERSION_FILE = join(__dirname, "sidecar-version");
+
+function readPinnedSidecarVersion() {
+  if (process.env.CLIPROXYAPI_VERSION) {
+    return process.env.CLIPROXYAPI_VERSION.replace(/^v/, "");
+  }
+  if (existsSync(SIDECAR_VERSION_FILE)) {
+    const pinned = readFileSync(SIDECAR_VERSION_FILE, "utf8").trim().replace(/^v/, "");
+    if (pinned) return pinned;
+  }
+  return null;
+}
+
+async function resolveRelease(channelConfig, headers) {
+  const pinnedVersion = readPinnedSidecarVersion();
+  const apiUrl = pinnedVersion
+    ? `https://api.github.com/repos/${channelConfig.repo}/releases/tags/v${pinnedVersion}`
+    : `https://api.github.com/repos/${channelConfig.repo}/releases/latest`;
+
+  const apiRes = await fetch(apiUrl, { headers });
+  if (!apiRes.ok) {
+    const hint =
+      channelConfig.repo.includes("CLIProxyAPIPlus")
+        ? "\nCLIProxyAPIPlus may be private, renamed, or unavailable. To use mainline instead, run: CLIPROXYAPI_CHANNEL=mainline pnpm update-sidecar"
+        : pinnedVersion
+          ? `\nPinned sidecar version v${pinnedVersion} was not found. Update scripts/sidecar-version or set CLIPROXYAPI_VERSION.`
+          : "";
+    throw new Error(
+      `GitHub API error (${apiRes.status}): ${apiRes.statusText} for ${apiUrl}${hint}`,
+    );
+  }
+
+  return apiRes.json();
+}
 
 const CHANNELS = {
   plus: {
@@ -245,28 +279,19 @@ async function main() {
   const { channel, force, requestedTarget } = parseArgs();
   const channelConfig = getChannelConfig(channel);
 
-  // Fetch latest version
   const headers = { "User-Agent": "proxypal-sidecar-updater" };
   const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const apiUrl = `https://api.github.com/repos/${channelConfig.repo}/releases/latest`;
-  const apiRes = await fetch(apiUrl, { headers });
-  if (!apiRes.ok) {
-    const hint =
-      channel === "plus"
-        ? "\nCLIProxyAPIPlus may be private, renamed, or unavailable. To use mainline instead, run: CLIPROXYAPI_CHANNEL=mainline pnpm update-sidecar"
-        : "";
-    throw new Error(
-      `GitHub API error (${apiRes.status}): ${apiRes.statusText} for ${apiUrl}${hint}`,
-    );
-  }
-  const release = await apiRes.json();
+  const release = await resolveRelease(channelConfig, headers);
   const version = release.tag_name.replace(/^v/, "");
+  const pinnedVersion = readPinnedSidecarVersion();
   const releaseAssets = new Set((release.assets || []).map((asset) => asset.name));
   console.log(`${channelConfig.label} channel: ${channel}`);
   console.log(`${channelConfig.label} repo: ${channelConfig.repo}`);
-  console.log(`${channelConfig.label} version: ${version}`);
+  console.log(
+    `${channelConfig.label} version: ${version}${pinnedVersion ? " (pinned)" : " (latest)"}`,
+  );
 
   mkdirSync(BINARIES_DIR, { recursive: true });
 

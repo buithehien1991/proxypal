@@ -695,7 +695,7 @@ export const zhCN = {
       customRange: "范围：1,024 - 200,000 tokens",
       customTokenBudget: "自定义 Token 预算",
       description:
-        "配置 Antigravity Claude 模型（claude-sonnet-4-5-thinking、claude-opus-4-5-thinking）的思考/推理 token 预算。该配置同时适用于 OpenCode 和 AmpCode CLI agents。",
+        "配置 Antigravity Claude 模型（claude-sonnet-4-5-thinking、claude-opus-4-5-thinking）的思考/推理 token 预算。该配置适用于 OpenCode 及其他通过代理路由的 CLI agent。",
       geminiInjection: {
         description:
           "开启后，ProxyPal 会为 Gemini 3 模型注入 thinking 配置。若你希望自行在请求中控制 thinking_config，请关闭此项。",

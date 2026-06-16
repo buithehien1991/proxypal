@@ -1,7 +1,6 @@
 import { createEffect, createSignal, Show, splitProps } from "solid-js";
 import { useI18n } from "../../i18n";
 import {
-  AMP_MODEL_SLOTS,
   getConfig,
   getReasoningEffortSettings,
   getThinkingBudgetSettings,
@@ -9,77 +8,15 @@ import {
   saveConfig,
   setReasoningEffortSettings,
   setThinkingBudgetSettings,
-  startProxy,
-  stopProxy,
   type ReasoningEffortLevel,
   type ThinkingBudgetSettings,
 } from "../../lib/tauri";
-import { appStore } from "../../stores/app";
 import { toastStore } from "../../stores/toast";
 import { Button, Switch } from "../ui";
 
 import type { SettingsBaseProps } from "./types";
 
-// GPT reasoning levels (static - these don't change)
-const AMP_GPT_REASONING_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh"] as const;
-
-type AmpGptReasoningLevel = (typeof AMP_GPT_REASONING_LEVELS)[number];
-
-const AMP_GPT_SUFFIX_LEVEL_SET = new Set<AmpGptReasoningLevel>(
-  AMP_GPT_REASONING_LEVELS.filter((level) => level !== "none") as AmpGptReasoningLevel[],
-);
-
-// Known model ID prefixes (e.g., copilot-gpt-5 -> gpt-5)
-const KNOWN_MODEL_PREFIXES = ["copilot-"] as const;
-
-const splitModelPrefix = (model: string): { prefix: string; unprefixed: string } => {
-  for (const p of KNOWN_MODEL_PREFIXES) {
-    if (model.startsWith(p)) {
-      return { prefix: p, unprefixed: model.slice(p.length) };
-    }
-  }
-  return { prefix: "", unprefixed: model };
-};
-
-// Helper functions that accept model set dynamically
-const splitAmpGptReasoningAlias = (alias: string, gptModelSet: Set<string>) => {
-  const match = alias.match(/^(.*)\(([^)]+)\)$/);
-  if (!match) {
-    return { base: alias, level: "none" as AmpGptReasoningLevel };
-  }
-  const base = match[1];
-  const level = match[2] as AmpGptReasoningLevel;
-  // Normalize prefix for membership testing
-  const { unprefixed } = splitModelPrefix(base);
-  // Only treat as reasoning suffix if unprefixed base is a known GPT model AND level is valid
-  if (gptModelSet.has(unprefixed) && AMP_GPT_SUFFIX_LEVEL_SET.has(level)) {
-    return { base, level };
-  }
-  // Not a GPT reasoning suffix - return original alias as base
-  return { base: alias, level: "none" as AmpGptReasoningLevel };
-};
-
-const applyAmpGptReasoningLevel = (
-  alias: string,
-  level: AmpGptReasoningLevel,
-  gptModelSet: Set<string>,
-) => {
-  const { base } = splitAmpGptReasoningAlias(alias, gptModelSet);
-  const { unprefixed } = splitModelPrefix(base);
-  // Check unprefixed base against model set
-  if (!gptModelSet.has(unprefixed)) {
-    return alias;
-  }
-  if (level === "none") {
-    return base;
-  }
-  return `${base}(${level})`;
-};
-
-interface ThinkingReasoningSettingsProps extends SettingsBaseProps {
-  gptBaseModels: () => string[];
-  gptBaseModelSet: () => Set<string>;
-}
+interface ThinkingReasoningSettingsProps extends SettingsBaseProps {}
 
 export function ThinkingReasoningSettings(props: ThinkingReasoningSettingsProps) {
   const { t } = useI18n();
@@ -89,9 +26,9 @@ export function ThinkingReasoningSettings(props: ThinkingReasoningSettingsProps)
     "saving",
     "setSaving",
     "handleConfigChange",
-    "gptBaseModels",
-    "gptBaseModelSet",
   ]);
+
+  void local;
 
   const [thinkingBudgetMode, setThinkingBudgetMode] =
     createSignal<ThinkingBudgetSettings["mode"]>("medium");
@@ -104,11 +41,6 @@ export function ThinkingReasoningSettings(props: ThinkingReasoningSettingsProps)
   const [reasoningEffortLevel, setReasoningEffortLevel] =
     createSignal<ReasoningEffortLevel>("medium");
   const [savingReasoningEffort, setSavingReasoningEffort] = createSignal(false);
-  const [savingSlotReasoningLevels, setSavingSlotReasoningLevels] = createSignal<Set<string>>(
-    new Set(),
-  );
-
-  void local;
 
   createEffect(async () => {
     try {
@@ -194,93 +126,6 @@ export function ThinkingReasoningSettings(props: ThinkingReasoningSettingsProps)
       setSavingReasoningEffort(false);
     }
   };
-
-  const updateSlotReasoningLevel = async (slotId: string, level: AmpGptReasoningLevel) => {
-    if (savingSlotReasoningLevels().has(slotId)) {
-      return;
-    }
-
-    const modelSet = local.gptBaseModelSet();
-    const slot = AMP_MODEL_SLOTS.find((s) => s.id === slotId);
-    if (!slot) {
-      return;
-    }
-
-    const originalMappings = local.config().ampModelMappings || [];
-    const originalMapping = originalMappings.find((m) => m.name === slot.fromModel);
-    const originalAlias = originalMapping?.alias;
-
-    const computeUpdatedConfig = () => {
-      const currentMappings = local.config().ampModelMappings || [];
-      const existingMapping = currentMappings.find((m) => m.name === slot.fromModel);
-      if (!existingMapping) {
-        return null;
-      }
-
-      const nextAlias = applyAmpGptReasoningLevel(existingMapping.alias, level, modelSet);
-
-      if (nextAlias === existingMapping.alias) {
-        return null;
-      }
-
-      const newMappings = currentMappings.map((m) =>
-        m.name === slot.fromModel ? { ...m, alias: nextAlias } : m,
-      );
-      return {
-        config: { ...local.config(), ampModelMappings: newMappings },
-        newAlias: nextAlias,
-      };
-    };
-
-    const result = computeUpdatedConfig();
-    if (!result) {
-      return;
-    }
-
-    const { config: initialNewConfig, newAlias } = result;
-
-    local.setConfig(initialNewConfig);
-    setSavingSlotReasoningLevels((prev) => new Set(prev).add(slotId));
-
-    try {
-      await saveConfig(local.config());
-    } catch (error) {
-      const currentMappings = local.config().ampModelMappings || [];
-      const currentMapping = currentMappings.find((m) => m.name === slot.fromModel);
-      if (originalAlias !== undefined && currentMapping?.alias === newAlias) {
-        const revertedMappings = currentMappings.map((m) =>
-          m.name === slot.fromModel ? { ...m, alias: originalAlias } : m,
-        );
-        local.setConfig({ ...local.config(), ampModelMappings: revertedMappings });
-      }
-      toastStore.error(
-        t("settings.toasts.failedToUpdateReasoningLevel"),
-        error instanceof Error ? error.message : String(error),
-      );
-      return;
-    } finally {
-      setSavingSlotReasoningLevels((prev) => {
-        const next = new Set(prev);
-        next.delete(slotId);
-        return next;
-      });
-    }
-
-    if (appStore.proxyStatus().running) {
-      try {
-        await stopProxy();
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        await startProxy();
-      } catch (error) {
-        toastStore.error(
-          t("settings.toasts.reasoningLevelSavedButProxyRestartFailed"),
-          error instanceof Error ? error.message : String(error),
-        );
-      }
-    }
-  };
-
-  void updateSlotReasoningLevel;
 
   return (
     <>

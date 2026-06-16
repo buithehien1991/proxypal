@@ -703,7 +703,7 @@ export const vi = {
       customRange: "Phạm vi: 1.024 - 200.000 tokens",
       customTokenBudget: "Ngân sách Token tùy chỉnh",
       description:
-        "Cấu hình ngân sách thinking/reasoning token cho các model Antigravity Claude (claude-sonnet-4-5-thinking, claude-opus-4-5-thinking). Áp dụng cho cả OpenCode và AmpCode CLI agents.",
+        "Cấu hình ngân sách thinking/reasoning token cho các model Antigravity Claude (claude-sonnet-4-5-thinking, claude-opus-4-5-thinking). Áp dụng cho OpenCode và các CLI agent khác đi qua proxy.",
       geminiInjection: {
         description:
           "Khi bật, ProxyPal sẽ chèn cấu hình thinking cho các model Gemini 3. Tắt nếu bạn muốn tự kiểm soát thinking_config trong yêu cầu.",

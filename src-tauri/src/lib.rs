@@ -459,8 +459,6 @@ pub fn run() {
             commands::settings::set_log_size,
             commands::settings::get_websocket_auth,
             commands::settings::set_websocket_auth,
-            commands::models::get_force_model_mappings,
-            commands::models::set_force_model_mappings,
             // Window behavior
             commands::settings::get_close_to_tray,
             commands::settings::set_close_to_tray,

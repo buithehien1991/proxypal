@@ -706,7 +706,7 @@ export const en = {
       customRange: "Range: 1,024 - 200,000 tokens",
       customTokenBudget: "Custom Token Budget",
       description:
-        "Configure the thinking/reasoning token budget for Antigravity Claude models (claude-sonnet-4-5-thinking, claude-opus-4-5-thinking). This applies to both OpenCode and AmpCode CLI agents.",
+        "Configure the thinking/reasoning token budget for Antigravity Claude models (claude-sonnet-4-5-thinking, claude-opus-4-5-thinking). This applies to OpenCode and other CLI agents routed through the proxy.",
       geminiInjection: {
         description:
           "When enabled, ProxyPal injects thinking config for Gemini 3 models. Disable if you want to control thinking_config in your requests.",

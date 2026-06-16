@@ -1,7 +1,6 @@
 import { getVersion } from "@tauri-apps/api/app";
-import { createEffect, createMemo, createSignal, For, onMount, Show } from "solid-js";
+import { createEffect, createSignal, For, onMount, Show } from "solid-js";
 import { AdvancedSettings } from "../components/settings/AdvancedSettings";
-import { AmpSettings } from "../components/settings/AmpSettings";
 import { ClaudeCodeSettings } from "../components/settings/ClaudeCodeSettings";
 import { CloudflareSettings } from "../components/settings/CloudflareSettings";
 import { ModelsSettings } from "../components/settings/ModelsSettings";
@@ -21,7 +20,6 @@ import {
   appendToShellProfile,
   getAvailableModels,
   getCloseToTray,
-  getGptReasoningModels,
   saveConfig,
   setCloseToTray,
   startProxy,
@@ -37,9 +35,6 @@ export function SettingsPage() {
   const [activeTab, setActiveTab] = createSignal<SettingsTab>("general");
   const [appVersion, setAppVersion] = createSignal("0.0.0");
 
-  // GPT base models fetched from backend (single source of truth)
-  const [gptBaseModels, setGptBaseModels] = createSignal<string[]>([]);
-  const gptBaseModelSet = createMemo(() => new Set(gptBaseModels()));
   const [availableModels, setAvailableModels] = createSignal<AvailableModel[]>([]);
 
   // Handle navigation from other components (e.g., CopilotCard)
@@ -67,18 +62,10 @@ export function SettingsPage() {
     } catch (error) {
       console.error("Failed to get app version:", error);
     }
-
-    // Load GPT reasoning models from backend (single source of truth)
-    try {
-      const gptModels = await getGptReasoningModels();
-      setGptBaseModels(gptModels);
-    } catch (error) {
-      console.error("Failed to load GPT reasoning models:", error);
-    }
   });
 
   // Reactively load models when proxy becomes running
-  // This ensures models are re-fetched after proxy restarts (e.g., AMP save)
+  // This ensures models are re-fetched after proxy restarts
   // and catches auth-file models that load after the sidecar's management API is ready
   createEffect(() => {
     const running = appStore.proxyStatus().running;
@@ -498,8 +485,6 @@ export function SettingsPage() {
           <div class="space-y-4" classList={{ hidden: activeTab() !== "general" }}>
             <ThinkingReasoningSettings
               config={config}
-              gptBaseModels={gptBaseModels}
-              gptBaseModelSet={gptBaseModelSet}
               handleConfigChange={handleConfigChange}
               saving={saving}
               setConfig={setConfig}
@@ -512,20 +497,6 @@ export function SettingsPage() {
             <ClaudeCodeSettings
               config={config}
               getAvailableTargetModels={getAvailableTargetModels}
-              handleConfigChange={handleConfigChange}
-              saving={saving}
-              setConfig={setConfig}
-              setSaving={setSaving}
-            />
-          </div>
-
-          {/* Amp CLI Integration */}
-          <div class="space-y-4" classList={{ hidden: activeTab() !== "general" }}>
-            <AmpSettings
-              config={config}
-              getAvailableTargetModels={getAvailableTargetModels}
-              gptBaseModels={gptBaseModels}
-              gptBaseModelSet={gptBaseModelSet}
               handleConfigChange={handleConfigChange}
               saving={saving}
               setConfig={setConfig}

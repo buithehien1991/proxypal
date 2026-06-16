@@ -1,4 +1,3 @@
-use crate::config::save_config_to_file;
 use crate::state::AppState;
 use crate::types::{AvailableModel, ProviderTestResult};
 use serde::Deserialize;
@@ -658,53 +657,3 @@ pub async fn set_claude_code_model(model_type: String, model_name: String) -> Re
     Ok(())
 }
 
-// Get force model mappings from Management API
-#[tauri::command]
-pub async fn get_force_model_mappings(state: State<'_, AppState>) -> Result<bool, String> {
-    let port = state.config.lock().unwrap().port;
-    let url = crate::get_management_url(port, "ampcode/force-model-mappings");
-    
-    let client = crate::build_management_client();
-    let response = client
-        .get(&url)
-        .header("X-Management-Key", &crate::get_management_key())
-        .send()
-        .await
-        .map_err(|e| format!("Failed to get force model mappings: {}", e))?;
-    
-    if !response.status().is_success() {
-        return Ok(false); // Default to false
-    }
-    
-    let json: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
-    Ok(json.get("force-model-mappings").and_then(|v| v.as_bool()).unwrap_or(false))
-}
-
-// Set force model mappings via Management API
-#[tauri::command]
-pub async fn set_force_model_mappings(state: State<'_, AppState>, value: bool) -> Result<(), String> {
-    let port = state.config.lock().unwrap().port;
-    let url = crate::get_management_url(port, "ampcode/force-model-mappings");
-    
-    let client = crate::build_management_client();
-    let response = client
-        .put(&url)
-        .header("X-Management-Key", &crate::get_management_key())
-        .json(&serde_json::json!({ "value": value }))
-        .send()
-        .await
-        .map_err(|e| format!("Failed to set force model mappings: {}", e))?;
-    
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        return Err(format!("Failed to set force model mappings: {} - {}", status, text));
-    }
-    
-    // Persist to Tauri config so it survives restart
-    let mut config = state.config.lock().unwrap();
-    config.force_model_mappings = value;
-    save_config_to_file(&config).map_err(|e| format!("Failed to save config: {}", e))?;
-    
-    Ok(())
-}

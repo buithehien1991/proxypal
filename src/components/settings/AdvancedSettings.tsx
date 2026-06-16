@@ -621,10 +621,6 @@ export function AdvancedSettings(props: AdvancedSettingsProps) {
                 <option value="copilot">GitHub Copilot</option>
               </select>
               {(() => {
-                const mappings = props.config().ampModelMappings || [];
-                const mappedModels = mappings
-                  .filter((m) => m.enabled !== false && m.alias)
-                  .map((m) => m.alias);
                 const { builtInModels } = getAvailableTargetModels();
 
                 const getModelsForProvider = () => {
@@ -658,13 +654,6 @@ export function AdvancedSettings(props: AdvancedSettingsProps) {
                     value={newExcludedModel()}
                   >
                     <option value="">{t("common.selectModel")}</option>
-                    <Show when={mappedModels.length > 0}>
-                      <optgroup label="Amp Model Mappings">
-                        <For each={[...new Set(mappedModels)]}>
-                          {(model) => <option value={model}>{model}</option>}
-                        </For>
-                      </optgroup>
-                    </Show>
                     <Show when={getModelsForProvider().length > 0}>
                       <optgroup label={`${newExcludedProvider() || "Provider"} Models`}>
                         <For each={getModelsForProvider()}>

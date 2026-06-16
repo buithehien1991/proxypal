@@ -1,31 +1,38 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type { CloudflareConfig } from "./cloudflare";
-import type { AmpModelMapping, AmpOpenAIProvider, CopilotConfig } from "./models";
+import type { AmpOpenAIProvider, CopilotConfig } from "./models";
 import type { SshConfig } from "./ssh";
 
 // Config
 export interface AppConfig {
-  ampApiKey: string;
-  ampModelMappings: AmpModelMapping[];
-  ampOpenaiProvider?: AmpOpenAIProvider; // Deprecated: for migration only
-  ampOpenaiProviders: AmpOpenAIProvider[]; // Array of custom providers
-  ampRoutingMode: string; // "mappings" or "openai"
+  /** @deprecated Legacy Amp CLI fields retained for config.json compatibility */
+  ampApiKey?: string;
+  /** @deprecated Legacy Amp CLI fields retained for config.json compatibility */
+  ampModelMappings?: Array<{
+    alias: string;
+    enabled?: boolean;
+    fork?: boolean;
+    name: string;
+  }>;
+  ampOpenaiProvider?: AmpOpenAIProvider;
+  ampOpenaiProviders: AmpOpenAIProvider[];
+  /** @deprecated Legacy Amp CLI fields retained for config.json compatibility */
+  ampRoutingMode?: string;
   autoStart: boolean;
   cloudflareConfigs?: CloudflareConfig[];
-  commercialMode?: boolean; // Disable request logging for lower memory usage
+  commercialMode?: boolean;
   copilot: CopilotConfig;
   debug: boolean;
-  disableControlPanel?: boolean; // Hide CLIProxyAPI's web management UI
-  forceModelMappings: boolean; // Force model mappings to take precedence over local API keys
-  geminiThinkingInjection?: boolean; // Inject thinking config for Gemini 3 models
+  disableControlPanel?: boolean;
+  geminiThinkingInjection?: boolean;
   launchAtLogin: boolean;
   locale?: string;
   loggingToFile: boolean;
   logsMaxTotalSizeMb: number;
-  managementKey?: string; // Management API key for internal proxy calls
+  managementKey?: string;
   port: number;
-  proxyApiKey?: string; // API key for client authentication
+  proxyApiKey?: string;
   proxyPassword?: string;
   proxyUrl: string;
   proxyUsername?: string;
@@ -33,12 +40,12 @@ export interface AppConfig {
   quotaSwitchProject: boolean;
   requestLogging: boolean;
   requestRetry: number;
-  routingStrategy: string; // "round-robin", "fill-first", "sequential"
+  routingStrategy: string;
   sidebarPinned?: boolean;
   sshConfigs?: SshConfig[];
   usageStatsEnabled: boolean;
   useSystemProxy?: boolean;
-  wsAuth?: boolean; // Require authentication for WebSocket connections
+  wsAuth?: boolean;
 }
 
 export async function getConfig(): Promise<AppConfig> {
@@ -53,7 +60,6 @@ export async function reloadConfig(): Promise<AppConfig> {
   return invoke("reload_config");
 }
 
-// Raw Config YAML - for power users
 export async function getConfigYaml(): Promise<string> {
   return invoke("get_config_yaml");
 }

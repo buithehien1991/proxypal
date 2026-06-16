@@ -4,7 +4,6 @@ import {
   getAuthStatus,
   getConfig,
   getProxyStatus,
-  migrateAmpModelMappings,
   onAuthStatusChanged,
   onCloudflareStatusChanged,
   onProxyStatusChanged,
@@ -49,11 +48,7 @@ function createAppStore() {
 
   // Config
   const [config, setConfig] = createSignal<AppConfig>({
-    ampApiKey: "",
-    ampModelMappings: [],
-    ampOpenaiProvider: undefined,
     ampOpenaiProviders: [],
-    ampRoutingMode: "mappings",
     autoStart: true,
     copilot: {
       accountType: "individual",
@@ -64,7 +59,6 @@ function createAppStore() {
       rateLimitWait: false,
     },
     debug: false,
-    forceModelMappings: false,
     launchAtLogin: false,
     locale: "en",
     loggingToFile: false,
@@ -138,18 +132,6 @@ function createAppStore() {
       if (nextConfig.locale !== resolvedLocale) {
         nextConfig = { ...nextConfig, locale: resolvedLocale };
         shouldSave = true;
-      }
-
-      // Auto-migrate amp model mappings when slot models change across versions
-      if (nextConfig.ampModelMappings?.length) {
-        const result = migrateAmpModelMappings(nextConfig.ampModelMappings);
-        if (result.migrated) {
-          nextConfig = {
-            ...nextConfig,
-            ampModelMappings: result.mappings,
-          };
-          shouldSave = true;
-        }
       }
 
       setConfig(nextConfig);

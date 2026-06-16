@@ -111,32 +111,7 @@ pub fn detect_cli_agents(state: State<AppState>) -> Vec<AgentStatus> {
         docs_url: "https://help.router-for.me/agent-client/droid.html".to_string(),
     });
 
-    // 5. Amp CLI - uses ~/.config/amp/settings.json or AMP_URL env
-    let amp_installed = which_exists("amp");
-    let amp_config = home.join(".config/amp/settings.json");
-    let amp_configured = check_env_configured("AMP_URL", &endpoint) || {
-        if amp_config.exists() {
-            std::fs::read_to_string(&amp_config)
-                .map(|c| c.contains(&endpoint) || c.contains("localhost:8317"))
-                .unwrap_or(false)
-        } else {
-            false
-        }
-    };
-
-    agents.push(AgentStatus {
-        id: "amp-cli".to_string(),
-        name: "Amp CLI".to_string(),
-        description: "Sourcegraph's Amp coding assistant".to_string(),
-        installed: amp_installed,
-        configured: amp_configured,
-        config_type: "both".to_string(),
-        config_path: Some(amp_config.to_string_lossy().to_string()),
-        logo: "/logos/amp.svg".to_string(),
-        docs_url: "https://help.router-for.me/agent-client/amp-cli.html".to_string(),
-    });
-
-    // 6. OpenCode - uses opencode.json config file with custom provider
+    // 5. OpenCode - uses opencode.json config file with custom provider
     let opencode_installed = which_exists("opencode");
     // Check for global opencode.json in ~/.config/opencode/opencode.json
     let opencode_global_config = home.join(".config/opencode/opencode.json");
@@ -396,7 +371,7 @@ pub async fn configure_cli_agent(
     agent_id: String,
     models: Vec<AvailableModel>,
 ) -> Result<serde_json::Value, String> {
-    let (port, endpoint, endpoint_v1) = {
+    let (_port, endpoint, endpoint_v1) = {
         let config = state.config.lock().unwrap();
         let port = config.port;
         let endpoint = format!("http://127.0.0.1:{}", port);
@@ -507,8 +482,6 @@ wire_api = "responses"
         }
 
         "factory-droid" => configure_factory_droid_agent(&home, &endpoint, &models),
-
-        "amp-cli" => configure_amp_cli_agent(&home, port),
 
         "opencode" => configure_opencode_agent(
             &home,
@@ -875,105 +848,6 @@ fn configure_factory_droid_agent(
         "configPath": config_path.to_string_lossy(),
         "modelsConfigured": models.len(),
         "instructions": "Factory Droid has been configured. Run 'droid' or 'factory' to start using it."
-    }))
-}
-
-fn configure_amp_cli_agent(
-    home: &std::path::Path,
-    port: u16,
-) -> Result<serde_json::Value, String> {
-    // Create ~/.config/amp directory
-    let amp_dir = home.join(".config/amp");
-    std::fs::create_dir_all(&amp_dir).map_err(|e| e.to_string())?;
-
-    // Amp CLI requires localhost URL (not 127.0.0.1) per CLIProxyAPI docs
-    // See: https://help.router-for.me/agent-client/amp-cli.html
-    let amp_endpoint = format!("http://localhost:{}", port);
-
-    // NOTE: Model mappings are configured in CLIProxyAPI's config.yaml (proxy-config.yaml),
-    // NOT in Amp's settings.json. Amp CLI doesn't support amp.modelMapping setting.
-    // The mappings in ProxyPal settings are written to CLIProxyAPI config when proxy starts.
-    // See: https://help.router-for.me/agent-client/amp-cli.html#model-fallback-behavior
-
-    // ProxyPal settings to add/update (only valid Amp CLI settings)
-    let proxypal_settings = serde_json::json!({
-        // Core proxy URL - routes all Amp traffic through CLIProxyAPI
-        "amp.url": amp_endpoint,
-
-        // API key for authentication with the proxy
-        // This matches the api-keys in CLIProxyAPI config
-        "amp.apiKey": "proxypal-local",
-
-        // Enable extended thinking for Claude models
-        "amp.anthropic.thinking.enabled": true,
-
-        // Enable TODOs tracking
-        "amp.todos.enabled": true,
-
-        // Git commit settings - add Amp thread link and co-author
-        "amp.git.commit.ampThread.enabled": true,
-        "amp.git.commit.coauthor.enabled": true,
-
-        // Tool timeout (5 minutes)
-        "amp.tools.stopTimeout": 300,
-
-        // Auto-update mode
-        "amp.updates.mode": "auto"
-    });
-
-    let config_path = amp_dir.join("settings.json");
-
-    // Merge with existing config to preserve user's other settings
-    let final_config = if config_path.exists() {
-        if let Ok(existing) = std::fs::read_to_string(&config_path) {
-            if let Ok(mut existing_json) = serde_json::from_str::<serde_json::Value>(&existing) {
-                // Merge proxypal settings into existing config
-                if let Some(existing_obj) = existing_json.as_object_mut() {
-                    if let Some(new_obj) = proxypal_settings.as_object() {
-                        for (key, value) in new_obj {
-                            existing_obj.insert(key.clone(), value.clone());
-                        }
-                    }
-                    // Remove invalid amp.modelMapping key if it exists
-                    // Model mappings should be in CLIProxyAPI config, not Amp settings
-                    existing_obj.remove("amp.modelMapping");
-                }
-                existing_json
-            } else {
-                // Existing file is not valid JSON, create new
-                proxypal_settings
-            }
-        } else {
-            // Can't read file, create new
-            proxypal_settings
-        }
-    } else {
-        // No existing config, create new
-        proxypal_settings
-    };
-
-    let settings_content = serde_json::to_string_pretty(&final_config).map_err(|e| e.to_string())?;
-    std::fs::write(&config_path, &settings_content).map_err(|e| e.to_string())?;
-
-    // Also provide env var option and API key instructions.
-    // Use platform-appropriate syntax (PowerShell on Windows, export on Unix).
-    let shell_config = format!(
-        "# ProxyPal - Amp CLI Configuration (alternative to settings.json)\n\
-         {amp_url}\n\
-         {amp_key}\n\
-         \n\
-         # For Amp cloud features, get your API key from https://ampcode.com/settings\n\
-         # and add it to ProxyPal Settings > Amp CLI Integration > Amp API Key\n",
-        amp_url = env_export_line("AMP_URL", &amp_endpoint),
-        amp_key = env_export_line("AMP_API_KEY", "proxypal-local"),
-    );
-
-    Ok(serde_json::json!({
-        "success": true,
-        "configType": "both",
-        "configPath": config_path.to_string_lossy(),
-        "shellConfig": shell_config,
-        "instructions": "Amp CLI has been configured. Run 'amp' to start using it. The API key 'proxypal-local' is pre-configured for local proxy access."
     }))
 }
 

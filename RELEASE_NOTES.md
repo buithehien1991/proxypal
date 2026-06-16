@@ -1,3 +1,47 @@
+# ProxyPal v0.4.42
+
+**Released:** 2026-06-16
+
+## Sidecar Upgrade: CLIProxyAPI v7.1.75 → v7.2.7
+
+This release upgrades the bundled CLIProxyAPI sidecar from **v7.1.75** (June 13) to **v7.2.7** (June 16).
+
+### Why v7.2.x
+
+CLIProxyAPI v7.2.x adds websocket passthrough for Codex and XAI, improved streaming/tool-call normalization, community plugin store sources, and log cursor APIs. ProxyPal's backend relies on the sidecar for streaming proxy traffic, so staying on v7.1.x left those fixes behind.
+
+### Breaking upstream change handled
+
+CLIProxyAPI **v7.2.0 removed Amp integration** (`feat!: remove amp integration support`). ProxyPal removed all Amp-specific UI, agent auto-config, YAML generation, and management API calls that depended on the removed `ampcode` module.
+
+Custom OpenAI-compatible providers (`ampOpenaiProviders` in config) are unchanged.
+
+### Sidecar version pinning
+
+Sidecar downloads are now pinned via `scripts/sidecar-version` (currently `7.2.7`) instead of always fetching GitHub `releases/latest`. Override with `CLIPROXYAPI_VERSION` when needed.
+
+### Highlights (v7.1.76 → v7.2.7)
+
+- **v7.2.3–4:** Codex/XAI websocket passthrough and transcript compaction
+- **v7.2.2:** Community plugin store sources, OpenAI video support
+- **v7.2.6:** Management log cursor APIs (ProxyPal still uses `GET /v0/management/logs?lines=N`)
+- **v7.2.7:** Web search domain sanitization, Claude `tool_result` normalization
+
+### Removed in ProxyPal
+
+- Amp CLI Integration settings panel
+- Amp CLI agent auto-configuration
+- `ampcode` block in generated proxy YAML
+- Force model mappings management API (`/v0/management/ampcode/force-model-mappings`)
+
+Legacy Amp fields in `config.json` are ignored but preserved for deserialization.
+
+### Compatibility
+
+Existing ProxyPal IPC endpoints (`/v1/models`, `/api/auth/status`, `/v0/management/auth-files`, usage sync) remain stable. Smoke-test OAuth providers, proxy start/stop, log viewer, and usage sync after upgrading.
+
+---
+
 # ProxyPal v0.4.41
 
 **Released:** 2026-06-13
@@ -56,27 +100,5 @@ This release upgrades the bundled CLIProxyAPI sidecar from **v7.1.47** (June 6) 
 ## Sidecar Upgrade: CLIProxyAPI v7.1.44 → v7.1.47
 
 This release upgrades the bundled CLIProxyAPI sidecar from **v7.1.44** (June 3) to **v7.1.47** (June 6), picking up 3 upstream releases with pluginhost capabilities, safemode example server, and file-backed request/response logging.
-
-### What changed (v7.1.45 → v7.1.47)
-
-**Plugin system (v7.1.47):**
-
-- **pluginhost capabilities** — command-line flag handling and plugin execution for the plugin host subsystem
-
-**Safemode (v7.1.46):**
-
-- **Example API key warning server** — reference implementation for surfacing compromised-key warnings in safemode deployments
-
-**Logging (v7.1.45):**
-
-- **File-backed request/response sources** — enhanced API logging with persistent request/response capture
-
-**Fixes (v7.1.45):**
-
-- **xai orphaned tool_choice** — drops orphaned `tool_choice` when the Claude tools array is empty, preventing replay errors
-
----
-
-## Notes
 
 This is a sidecar-only bump — no ProxyPal UI or API surface changes.

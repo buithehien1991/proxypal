@@ -78,15 +78,6 @@ export async function setWebsocketAuth(value: boolean): Promise<void> {
   return invoke("set_websocket_auth", { value });
 }
 
-// Force Model Mappings - model mappings take precedence over local API keys
-export async function getForceModelMappings(): Promise<boolean> {
-  return invoke("get_force_model_mappings");
-}
-
-export async function setForceModelMappings(value: boolean): Promise<void> {
-  return invoke("set_force_model_mappings", { value });
-}
-
 // OAuth Excluded Models - block specific models per OAuth provider
 export type OAuthExcludedModels = Record<string, string[]>;
 

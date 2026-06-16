@@ -54,8 +54,6 @@ pub struct AppConfig {
     #[serde(default)]
     pub copilot: CopilotConfig,
     #[serde(default)]
-    pub force_model_mappings: bool,
-    #[serde(default)]
     pub claude_api_keys: Vec<ClaudeApiKey>,
     #[serde(default)]
     pub gemini_api_keys: Vec<GeminiApiKey>,
@@ -162,7 +160,6 @@ impl Default for AppConfig {
             sidebar_pinned: false,
             routing_strategy: "round-robin".to_string(),
             copilot: CopilotConfig::default(),
-            force_model_mappings: true,
             claude_api_keys: Vec::new(),
             gemini_api_keys: Vec::new(),
             codex_api_keys: Vec::new(),

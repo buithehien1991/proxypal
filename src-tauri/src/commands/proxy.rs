@@ -69,8 +69,6 @@ fn build_proxy_config_yaml(
     oauth_excluded_models_section: &str,
 ) -> Result<String, String> {
     let proxy_url_line = build_proxy_url_line(config);
-    let amp_api_key_line = build_amp_api_key_line(config);
-    let amp_model_mappings_section = build_amp_model_mappings_section(config);
     let openai_compat_section = build_openai_compat_section(config);
     let claude_api_key_section = build_claude_api_key_section(config);
     let gemini_api_key_section = build_gemini_api_key_section(config);
@@ -107,17 +105,7 @@ remote-management:
   secret-key: "{}"
   disable-control-panel: {}
 
-{}{}{}{}{}{}{}# Amp CLI Integration - enables amp login and management routes
-# See: https://help.router-for.me/agent-client/amp-cli.html
-# Get API key from: https://ampcode.com/settings
-ampcode:
-  upstream-url: "https://ampcode.com"
-{}
-{}
-  restrict-management-to-localhost: false
-  force-model-mappings: {}
-
-# Additional settings
+{}{}{}{}{}{}{}# Additional settings
 request-log: {}
 commercial-mode: {}
 ws-auth: {}
@@ -145,9 +133,6 @@ ws-auth: {}
         vertex_api_key_section,
         routing_section,
         payload_section,
-        amp_api_key_line,
-        amp_model_mappings_section,
-        config.force_model_mappings,
         config.request_logging,
         config.commercial_mode,
         config.ws_auth
@@ -194,33 +179,6 @@ fn build_proxy_url_line(config: &AppConfig) -> String {
         }
     }
     format!("proxy-url: \"{}\"\n", effective_proxy_url)
-}
-
-fn build_amp_api_key_line(config: &AppConfig) -> String {
-    if config.amp_api_key.is_empty() {
-        "  # upstream-api-key: \"\"  # Set your Amp API key from https://ampcode.com/settings".to_string()
-    } else {
-        format!("  upstream-api-key: \"{}\"", config.amp_api_key)
-    }
-}
-
-fn build_amp_model_mappings_section(config: &AppConfig) -> String {
-    let enabled_mappings: Vec<_> = config.amp_model_mappings.iter()
-        .filter(|m| m.enabled)
-        .collect();
-
-    if enabled_mappings.is_empty() {
-        "  # model-mappings:  # Optional: map Amp model requests to different models\n  #   - from: claude-opus-4-5-20251101\n  #     to: your-preferred-model".to_string()
-    } else {
-        let mut mappings = String::from("  model-mappings:");
-        for mapping in &enabled_mappings {
-            mappings.push_str(&format!("\n    - from: {}\n      to: {}", mapping.name, mapping.alias));
-            if mapping.fork {
-                mappings.push_str("\n      fork: true");
-            }
-        }
-        mappings
-    }
 }
 
 fn build_openai_compat_section(config: &AppConfig) -> String {
@@ -796,16 +754,6 @@ pub async fn start_proxy(
 
         let _ = client
             .put(&format!(
-                "http://127.0.0.1:{}/v0/management/ampcode/force-model-mappings",
-                port
-            ))
-            .header("X-Management-Key", &get_management_key())
-            .json(&serde_json::json!({"value": config.force_model_mappings}))
-            .send()
-            .await;
-
-        let _ = client
-            .put(&format!(
                 "http://127.0.0.1:{}/v0/management/max-retry-interval",
                 port
             ))
@@ -816,7 +764,7 @@ pub async fn start_proxy(
     }
     
     // Start log file watcher for request tracking
-    // This replaces the old polling approach and captures ALL requests including Amp proxy forwarding
+    // This replaces the old polling approach and captures ALL proxy requests
     let log_path = config_dir.join("logs").join("main.log");
     let log_watcher_running = state.log_watcher_running.clone();
     let request_counter = state.request_counter.clone();
