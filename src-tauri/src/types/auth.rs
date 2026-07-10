@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AuthStatus {
     pub claude: u32,
     pub openai: u32,
@@ -11,22 +11,6 @@ pub struct AuthStatus {
     pub kiro: u32,
     pub antigravity: u32,
     pub kimi: u32,
-}
-
-impl Default for AuthStatus {
-    fn default() -> Self {
-        Self {
-            claude: 0,
-            openai: 0,
-            gemini: 0,
-            qwen: 0,
-            iflow: 0,
-            vertex: 0,
-            kiro: 0,
-            antigravity: 0,
-            kimi: 0,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,7 +27,7 @@ pub struct ProxyAuthStatus {
     pub providers: ProxyAuthProviders,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ProxyAuthProviders {
     #[serde(default)]
@@ -78,23 +62,6 @@ pub struct ProxyAuthProviderStatus {
     pub account: Option<String>,
     #[serde(default)]
     pub error: Option<String>,
-}
-
-impl Default for ProxyAuthProviders {
-    fn default() -> Self {
-        Self {
-            gemini: None,
-            claude: None,
-            openai: None,
-            qwen: None,
-            iflow: None,
-            vertex: None,
-            antigravity: None,
-            kiro: None,
-            copilot: None,
-            kimi: None,
-        }
-    }
 }
 
 impl Default for ProxyAuthStatus {

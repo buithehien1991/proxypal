@@ -1,7 +1,7 @@
 //! Request history and aggregate I/O helpers.
 
 use crate::config::{get_aggregate_path, get_history_path};
-use crate::types::{Aggregate, ModelStats, RequestHistory, RequestLog, TimeSeriesPoint};
+use crate::types::{Aggregate, RequestHistory, RequestLog, TimeSeriesPoint};
 
 // Load request history from file
 pub(crate) fn load_request_history() -> RequestHistory {
@@ -76,11 +76,11 @@ pub(crate) fn update_model_stats(agg: &mut Aggregate, req: &RequestLog) {
         req.model.clone()
     };
 
-    let entry = agg
-        .model_stats
-        .entry(model)
-        .or_insert(ModelStats::default());
-    entry.requests += 1;
+        let entry = agg
+            .model_stats
+            .entry(model)
+            .or_default();
+        entry.requests += 1;
     if req.status < 400 {
         entry.success_count += 1;
     }
@@ -97,11 +97,11 @@ pub(crate) fn update_provider_stats(agg: &mut Aggregate, req: &RequestLog) {
         req.provider.clone()
     };
 
-    let entry = agg
-        .provider_stats
-        .entry(provider)
-        .or_insert(ModelStats::default());
-    entry.requests += 1;
+        let entry = agg
+            .provider_stats
+            .entry(provider)
+            .or_default();
+        entry.requests += 1;
     if req.status < 400 {
         entry.success_count += 1;
     }

@@ -822,7 +822,7 @@ pub async fn fetch_kiro_quota() -> Result<Vec<crate::types::quota::KiroQuotaResu
 
     // Run kiro-cli chat --no-interactive "/usage"
     let mut cmd = Command::new(&kiro_cli_path);
-    cmd.args(&["chat", "--no-interactive", "/usage"]);
+    cmd.args(["chat", "--no-interactive", "/usage"]);
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
     let output = cmd.output();

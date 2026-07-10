@@ -44,10 +44,10 @@ fn extract_timestamp_from_line(line: &str) -> Option<u64> {
         return chrono::NaiveDateTime::parse_from_str(&datetime_str, "%Y-%m-%d %H:%M:%S")
             .ok()
             .map(|dt| {
-                dt.and_local_timezone(chrono::Local)
-                    .earliest()
-                    .unwrap_or_else(|| chrono::Local::now())
-                    .timestamp_millis() as u64
+                    dt.and_local_timezone(chrono::Local)
+                        .earliest()
+                        .unwrap_or_else(chrono::Local::now)
+                        .timestamp_millis() as u64
             });
     }
     None
@@ -202,12 +202,12 @@ fn parse_gin_log_line(
     let datetime_str = format!("{} {}", date_str.replace('/', "-"), time_str);
     let timestamp = chrono::NaiveDateTime::parse_from_str(&datetime_str, "%Y-%m-%d %H:%M:%S")
         .ok()
-        .map(|dt| {
-            dt.and_local_timezone(chrono::Local)
-                .earliest()
-                .unwrap_or_else(|| chrono::Local::now())
-                .timestamp_millis() as u64
-        })
+            .map(|dt| {
+                dt.and_local_timezone(chrono::Local)
+                    .earliest()
+                    .unwrap_or_else(chrono::Local::now)
+                    .timestamp_millis() as u64
+            })
         .unwrap_or_else(|| {
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
