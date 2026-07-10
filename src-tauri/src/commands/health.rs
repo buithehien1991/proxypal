@@ -3,7 +3,7 @@
 use tauri::State;
 
 use crate::state::AppState;
-use crate::types::{ProviderHealth, HealthStatus};
+use crate::types::{HealthStatus, ProviderHealth};
 
 #[tauri::command]
 pub async fn check_provider_health(state: State<'_, AppState>) -> Result<ProviderHealth, String> {
@@ -12,13 +12,13 @@ pub async fn check_provider_health(state: State<'_, AppState>) -> Result<Provide
         let status = state.proxy_status.lock().unwrap();
         (config.port, status.running, config.proxy_api_key.clone())
     };
-    
+
     let auth_status = state.auth_status.lock().unwrap().clone();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    
+
     // If proxy is not running, all providers are offline
     if !proxy_running {
         let offline_status = HealthStatus {
@@ -37,13 +37,13 @@ pub async fn check_provider_health(state: State<'_, AppState>) -> Result<Provide
             antigravity: offline_status,
         });
     }
-    
+
     let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(std::time::Duration::from_secs(5))
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());
-    
+
     // Check health for each provider based on auth status
     // Note: We use a single /v1/models call since the proxy handles routing
     // For now, if the proxy is responsive, all configured providers are healthy
@@ -61,7 +61,7 @@ pub async fn check_provider_health(state: State<'_, AppState>) -> Result<Provide
         }
         Err(_) => (false, None),
     };
-    
+
     // Build health status for each provider
     let make_status = |is_configured: bool| -> HealthStatus {
         if !is_configured {
@@ -85,7 +85,7 @@ pub async fn check_provider_health(state: State<'_, AppState>) -> Result<Provide
             }
         }
     };
-    
+
     Ok(ProviderHealth {
         claude: make_status(auth_status.claude > 0),
         openai: make_status(auth_status.openai > 0),

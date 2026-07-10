@@ -6,7 +6,10 @@ use std::process::Command;
 fn main() {
     // Load .env file for build-time environment variables (OAuth credentials, etc.)
     // The .env file is gitignored; see .env.example for required variables.
-    let dotenv_path = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join(".env");
+    let dotenv_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join(".env");
     if dotenv_path.exists() {
         if let Ok(content) = fs::read_to_string(&dotenv_path) {
             for line in content.lines() {

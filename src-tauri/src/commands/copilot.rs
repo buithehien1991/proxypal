@@ -19,12 +19,12 @@ pub async fn start_copilot(
 ) -> Result<CopilotStatus, String> {
     let config = state.config.lock().unwrap().clone();
     let port = config.copilot.port;
-    
+
     // Check if copilot is enabled
     if !config.copilot.enabled {
         return Err("Copilot is not enabled in settings".to_string());
     }
-    
+
     // First, check if copilot-api is already running on this port (maybe externally)
     let client = crate::build_management_client();
     let health_url = format!("http://127.0.0.1:{}/v1/models", port);
@@ -48,7 +48,7 @@ pub async fn start_copilot(
             return Ok(new_status);
         }
     }
-    
+
     // Kill any existing copilot process we're tracking
     {
         let mut process = state.copilot_process.lock().unwrap();
@@ -56,13 +56,13 @@ pub async fn start_copilot(
             let _ = child.kill(); // Ignore errors, process might already be dead
         }
     }
-    
+
     // Small delay to let port be released
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-    
+
     // Check if copilot-api is installed globally (faster startup)
     let detection = detect_copilot_api(app.clone()).await?;
-    
+
     if !detection.node_available {
         let checked = detection.checked_node_paths.join(", ");
         return Err(format!(
@@ -72,7 +72,7 @@ pub async fn start_copilot(
             if checked.is_empty() { "none".to_string() } else { checked }
         ));
     }
-    
+
     // Check Node.js version >= 20.16.0 (required for process.getBuiltinModule)
     if let Some(ref version_str) = detection.node_version {
         // Parse version like "v20.16.0" or "v18.19.0"
@@ -81,7 +81,7 @@ pub async fn start_copilot(
         if parts.len() >= 2 {
             let major: u32 = parts[0].parse().unwrap_or(0);
             let minor: u32 = parts[1].parse().unwrap_or(0);
-            
+
             // Require Node.js >= 20.16.0
             if major < 20 || (major == 20 && minor < 16) {
                 return Err(format!(
@@ -97,31 +97,43 @@ pub async fn start_copilot(
             }
         }
     }
-    
+
     // Determine command and arguments based on installation status
     let (bin_path, mut args) = if detection.installed {
         // Use copilot-api directly
-        let copilot_bin = detection.copilot_bin.clone()
-            .ok_or_else(|| format!(
+        let copilot_bin = detection.copilot_bin.clone().ok_or_else(|| {
+            format!(
                 "copilot-api binary path not found.\n\n\
                 Checked paths: {}",
                 detection.checked_copilot_paths.join(", ")
-            ))?;
-        println!("[copilot] Using globally installed copilot-api: {}{}", 
+            )
+        })?;
+        println!(
+            "[copilot] Using globally installed copilot-api: {}{}",
             copilot_bin,
-            detection.version.as_ref().map(|v| format!(" v{}", v)).unwrap_or_default());
+            detection
+                .version
+                .as_ref()
+                .map(|v| format!(" v{}", v))
+                .unwrap_or_default()
+        );
         (copilot_bin, vec![])
     } else if let Some(bunx_bin) = detection.bunx_bin.clone() {
         // Prefer bunx since copilot-api is now a Bun package (requires Bun >= 1.2.x)
-        println!("[copilot] Using bunx: {} @jeffreycao/copilot-api start", bunx_bin);
+        println!(
+            "[copilot] Using bunx: {} @jeffreycao/copilot-api start",
+            bunx_bin
+        );
         (bunx_bin, vec!["@jeffreycao/copilot-api".to_string()])
     } else if let Some(npx_bin) = detection.npx_bin.clone() {
         // Fallback to npx (may work with older versions)
-        println!("[copilot] Using npx: {} @jeffreycao/copilot-api@latest", npx_bin);
+        println!(
+            "[copilot] Using npx: {} @jeffreycao/copilot-api@latest",
+            npx_bin
+        );
         (npx_bin, vec!["@jeffreycao/copilot-api@latest".to_string()])
     } else {
-        return Err(
-            "Could not start GitHub Copilot bridge.\n\n\
+        return Err("Could not start GitHub Copilot bridge.\n\n\
             The copilot-api package now requires Bun (recommended) or Node.js.\n\n\
             Option 1 - Install Bun (recommended):\n\
             • macOS/Linux: curl -fsSL https://bun.sh/install | bash\n\
@@ -129,50 +141,55 @@ pub async fn start_copilot(
             Option 2 - Run manually in terminal:\n\
             • bunx @jeffreycao/copilot-api start --port 4141\n\
             • Or: npx @jeffreycao/copilot-api@latest start --port 4141\n\n\
-            For more info: https://github.com/caozhiyuan/copilot-api".to_string()
-        );
+            For more info: https://github.com/caozhiyuan/copilot-api"
+            .to_string());
     };
-    
+
     // Add common arguments
     args.push("start".to_string());
     args.push("--port".to_string());
     args.push(port.to_string());
-    
+
     // Add account type if specified
     if !config.copilot.account_type.is_empty() {
         args.push("--account".to_string());
         args.push(config.copilot.account_type.clone());
     }
-    
+
     // Add GitHub token if specified (for direct authentication)
     if !config.copilot.github_token.is_empty() {
         args.push("--github-token".to_string());
         args.push(config.copilot.github_token.clone());
     }
-    
+
     // Add rate limit if specified
     if let Some(rate_limit) = config.copilot.rate_limit {
         args.push("--rate-limit".to_string());
         args.push(rate_limit.to_string());
     }
-    
+
     // Add rate limit wait flag (copilot-api uses --wait)
     if config.copilot.rate_limit_wait {
         args.push("--wait".to_string());
     }
-    
+
     println!("[copilot] Executing: {} {}", bin_path, args.join(" "));
-    
+
     let command = app.shell().command(&bin_path).args(&args);
-    
-    let (mut rx, child) = command.spawn().map_err(|e| format!("Failed to spawn copilot-api: {}. Make sure Node.js is installed.", e))?;
-    
+
+    let (mut rx, child) = command.spawn().map_err(|e| {
+        format!(
+            "Failed to spawn copilot-api: {}. Make sure Node.js is installed.",
+            e
+        )
+    })?;
+
     // Store the child process
     {
         let mut process = state.copilot_process.lock().unwrap();
         *process = Some(child);
     }
-    
+
     // Update status to running (but not yet authenticated)
     {
         let mut status = state.copilot_status.lock().unwrap();
@@ -181,7 +198,7 @@ pub async fn start_copilot(
         status.endpoint = format!("http://localhost:{}", port);
         status.authenticated = false;
     }
-    
+
     // Listen for stdout/stderr in background task
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -201,7 +218,10 @@ pub async fn start_copilot(
                     // Check for successful login message
                     // copilot-api outputs "Listening on: http://localhost:PORT/" when ready
                     let text_lower = text.to_lowercase();
-                    if text_lower.contains("listening on") || text.contains("Logged in as") || text.contains("Server running") {
+                    if text_lower.contains("listening on")
+                        || text.contains("Logged in as")
+                        || text.contains("Server running")
+                    {
                         // Update authenticated status
                         if let Some(state) = app_handle.try_state::<AppState>() {
                             let mut status = state.copilot_status.lock().unwrap();
@@ -216,7 +236,10 @@ pub async fn start_copilot(
                     accumulated.push('\n');
                     if let Some(auth_info) = parse_copilot_auth_info(&accumulated) {
                         if auth_info.user_code.is_some() {
-                            println!("[copilot] Auth required - device code: {:?} (stdout)", auth_info.user_code);
+                            println!(
+                                "[copilot] Auth required - device code: {:?} (stdout)",
+                                auth_info.user_code
+                            );
                         }
                         let _ = app_handle.emit("copilot-auth-required", auth_info);
                     }
@@ -227,7 +250,10 @@ pub async fn start_copilot(
 
                     // Some processes log to stderr even for non-errors
                     let text_lower = text.to_lowercase();
-                    if text_lower.contains("listening on") || text.contains("Logged in as") || text.contains("Server running") {
+                    if text_lower.contains("listening on")
+                        || text.contains("Logged in as")
+                        || text.contains("Server running")
+                    {
                         if let Some(state) = app_handle.try_state::<AppState>() {
                             let mut status = state.copilot_status.lock().unwrap();
                             status.authenticated = true;
@@ -241,7 +267,10 @@ pub async fn start_copilot(
                     accumulated.push('\n');
                     if let Some(auth_info) = parse_copilot_auth_info(&accumulated) {
                         if auth_info.user_code.is_some() {
-                            println!("[copilot] Auth required - device code: {:?} (stderr)", auth_info.user_code);
+                            println!(
+                                "[copilot] Auth required - device code: {:?} (stderr)",
+                                auth_info.user_code
+                            );
                         }
                         let _ = app_handle.emit("copilot-auth-required", auth_info);
                     }
@@ -261,20 +290,23 @@ pub async fn start_copilot(
             }
         }
     });
-    
+
     // Wait for copilot-api to be ready (up to 8 seconds)
     // bunx/npx may need to download packages on first run, which takes ~5s
     let client = crate::build_management_client();
     let health_url = format!("http://127.0.0.1:{}/v1/models", port);
-    
+
     for i in 0..16 {
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        
+
         // Check if stdout listener already detected authentication
         {
             let status = state.copilot_status.lock().unwrap();
             if status.authenticated {
-                println!("[copilot] ✓ Ready via stdout detection at {:.1}s", (i + 1) as f32 * 0.5);
+                println!(
+                    "[copilot] ✓ Ready via stdout detection at {:.1}s",
+                    (i + 1) as f32 * 0.5
+                );
                 let status_clone = status.clone();
                 let _ = app.emit("copilot-status-changed", status_clone.clone());
                 return Ok(status_clone);
@@ -283,7 +315,7 @@ pub async fn start_copilot(
                 return Err("Copilot process stopped unexpectedly".to_string());
             }
         }
-        
+
         // Also check health endpoint
         if let Ok(response) = client
             .get(&health_url)
@@ -292,7 +324,10 @@ pub async fn start_copilot(
             .await
         {
             if response.status().is_success() {
-                println!("[copilot] ✓ Ready via health check at {:.1}s", (i + 1) as f32 * 0.5);
+                println!(
+                    "[copilot] ✓ Ready via health check at {:.1}s",
+                    (i + 1) as f32 * 0.5
+                );
                 let new_status = {
                     let mut status = state.copilot_status.lock().unwrap();
                     status.authenticated = true;
@@ -303,29 +338,35 @@ pub async fn start_copilot(
             }
         }
     }
-    
+
     // Return with "running but not authenticated" status after timeout
     // The background task will continue polling and emit status updates
     let initial_status = state.copilot_status.lock().unwrap().clone();
-    println!("[copilot] Returning after 8s wait: running={}, authenticated={}", initial_status.running, initial_status.authenticated);
+    println!(
+        "[copilot] Returning after 8s wait: running={}, authenticated={}",
+        initial_status.running, initial_status.authenticated
+    );
     let _ = app.emit("copilot-status-changed", initial_status.clone());
-    
+
     // Spawn background task to poll for authentication
     // This runs independently and emits status updates as authentication completes
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
         let client = crate::build_management_client();
         let health_url = format!("http://127.0.0.1:{}/v1/models", port);
-        
+
         // Poll for up to 60 seconds to catch slower authentication (especially on first run)
         for i in 0..120 {
             tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-            
+
             // Check if stdout listener already detected authentication
             if let Some(state) = app_handle.try_state::<AppState>() {
                 let status = state.copilot_status.lock().unwrap();
                 if status.authenticated {
-                    println!("✓ Copilot authenticated via stdout detection at {:.1}s", i as f32 * 0.5);
+                    println!(
+                        "✓ Copilot authenticated via stdout detection at {:.1}s",
+                        i as f32 * 0.5
+                    );
                     return;
                 }
                 // If process stopped, exit polling
@@ -334,7 +375,7 @@ pub async fn start_copilot(
                     return;
                 }
             }
-            
+
             // Also check health endpoint
             if let Ok(response) = client
                 .get(&health_url)
@@ -343,7 +384,10 @@ pub async fn start_copilot(
                 .await
             {
                 if response.status().is_success() {
-                    println!("✓ Copilot authenticated via health check at {:.1}s", i as f32 * 0.5);
+                    println!(
+                        "✓ Copilot authenticated via health check at {:.1}s",
+                        i as f32 * 0.5
+                    );
                     // Update status
                     if let Some(state) = app_handle.try_state::<AppState>() {
                         let new_status = {
@@ -356,16 +400,19 @@ pub async fn start_copilot(
                     return;
                 }
             }
-            
+
             // Log progress every 10 seconds
             if i > 0 && i % 20 == 0 {
-                println!("⏳ Waiting for Copilot authentication... ({:.0}s elapsed)", i as f32 * 0.5);
+                println!(
+                    "⏳ Waiting for Copilot authentication... ({:.0}s elapsed)",
+                    i as f32 * 0.5
+                );
             }
         }
-        
+
         println!("⚠ Copilot authentication poll timed out after 60s - user may need to complete GitHub auth manually");
     });
-    
+
     Ok(initial_status)
 }
 
@@ -381,15 +428,17 @@ pub async fn stop_copilot(
             return Ok(status.clone());
         }
     }
-    
+
     // Kill the child process
     {
         let mut process = state.copilot_process.lock().unwrap();
         if let Some(child) = process.take() {
-            child.kill().map_err(|e| format!("Failed to kill copilot-api: {}", e))?;
+            child
+                .kill()
+                .map_err(|e| format!("Failed to kill copilot-api: {}", e))?;
         }
     }
-    
+
     // Update status
     let new_status = {
         let mut status = state.copilot_status.lock().unwrap();
@@ -397,10 +446,10 @@ pub async fn stop_copilot(
         status.authenticated = false;
         status.clone()
     };
-    
+
     // Emit status update
     let _ = app.emit("copilot-status-changed", new_status.clone());
-    
+
     Ok(new_status)
 }
 
@@ -453,7 +502,7 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
     // Including version managers: Volta, nvm, fnm, asdf
     let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("~"));
     let home_str = home.to_string_lossy();
-    
+
     // Helper: find nvm node binary by checking versions directory
     let find_nvm_node = |home: &std::path::Path| -> Option<String> {
         let nvm_versions = home.join(".nvm/versions/node");
@@ -482,7 +531,7 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
                     .flatten()
                     .filter(|e| e.path().join("bin/node").exists())
                     .collect();
-                versions.sort_by_key(|b| std::cmp::Reverse(b.file_name())); // Descending
+                    versions.sort_by_key(|b| std::cmp::Reverse(b.file_name())); // Descending
                 if let Some(entry) = versions.first() {
                     let node_path = entry.path().join("bin/node");
                     return Some(node_path.to_string_lossy().to_string());
@@ -504,7 +553,11 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
         };
         if mise_installs.exists() {
             if let Ok(entries) = std::fs::read_dir(&mise_installs) {
-                let node_bin = if cfg!(target_os = "windows") { "bin/node.exe" } else { "bin/node" };
+                let node_bin = if cfg!(target_os = "windows") {
+                    "bin/node.exe"
+                } else {
+                    "bin/node"
+                };
                 let mut versions: Vec<_> = entries
                     .flatten()
                     .filter(|e| e.path().join(node_bin).exists())
@@ -512,8 +565,8 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
                 // Sort descending by filename (lexicographic); works well for semver-like
                 // names (e.g. "20.10.0" > "20.9.0" only when zero-padded, but this is the
                 // same best-effort approach used for nvm above)
-                versions.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
-                if let Some(entry) = versions.first() {
+                    versions.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
+                    if let Some(entry) = versions.first() {
                     let node_path = entry.path().join(node_bin);
                     return Some(node_path.to_string_lossy().to_string());
                 }
@@ -521,19 +574,19 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
         }
         None
     };
-    
+
     let mut node_paths: Vec<String> = if cfg!(target_os = "macos") {
         vec![
             // Version managers (most common for developers)
-            format!("{}/.volta/bin/node", home_str),      // Volta
+            format!("{}/.volta/bin/node", home_str), // Volta
             format!("{}/.fnm/current/bin/node", home_str), // fnm
-            format!("{}/.asdf/shims/node", home_str),      // asdf
+            format!("{}/.asdf/shims/node", home_str), // asdf
             format!("{}/.local/share/mise/shims/node", home_str), // mise
             // System package managers
-            "/opt/homebrew/bin/node".to_string(),      // Apple Silicon Homebrew
-            "/usr/local/bin/node".to_string(),          // Intel Homebrew / manual install
-            "/usr/bin/node".to_string(),                // System install
-            "/opt/local/bin/node".to_string(),          // MacPorts
+            "/opt/homebrew/bin/node".to_string(), // Apple Silicon Homebrew
+            "/usr/local/bin/node".to_string(),    // Intel Homebrew / manual install
+            "/usr/bin/node".to_string(),          // System install
+            "/opt/local/bin/node".to_string(),    // MacPorts
         ]
     } else if cfg!(target_os = "windows") {
         vec![
@@ -541,7 +594,7 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
             "C:\\Program Files\\nodejs\\node.exe".to_string(),
             "C:\\Program Files (x86)\\nodejs\\node.exe".to_string(),
             // Version managers on Windows
-            format!("{}/.volta/bin/node.exe", home_str),  // Volta
+            format!("{}/.volta/bin/node.exe", home_str), // Volta
             format!("{}/AppData/Roaming/nvm/current/node.exe", home_str), // nvm-windows
             format!("{}/AppData/Local/fnm_multishells/node.exe", home_str), // fnm
             format!("{}/AppData/Local/mise/shims/node.exe", home_str), // mise
@@ -572,7 +625,7 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
             "/home/linuxbrew/.linuxbrew/bin/node".to_string(),
         ]
     };
-    
+
     // Add nvm path if found (nvm doesn't use a simple symlink structure)
     if cfg!(not(target_os = "windows")) {
         if let Some(nvm_node) = find_nvm_node(&home) {
@@ -584,11 +637,14 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
     if let Some(mise_node) = find_mise_node(&home) {
         // Insert after nvm (if present) but before static paths
         let has_nvm_at_front = cfg!(not(target_os = "windows"))
-            && node_paths.first().map(|p| p.contains(".nvm")).unwrap_or(false);
+            && node_paths
+                .first()
+                .map(|p| p.contains(".nvm"))
+                .unwrap_or(false);
         let insert_pos = if has_nvm_at_front { 1 } else { 0 };
         node_paths.insert(insert_pos, mise_node);
     };
-    
+
     // Find working node binary and get version
     let mut node_bin: Option<String> = None;
     let mut node_version: Option<String> = None;
@@ -602,10 +658,15 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
             }
         }
     }
-    
+
     // Also try just "node" in case PATH is available
     if node_bin.is_none() {
-        let check = app.shell().command("node").args(["--version"]).output().await;
+        let check = app
+            .shell()
+            .command("node")
+            .args(["--version"])
+            .output()
+            .await;
         if let Ok(ref output) = check {
             if output.status.success() {
                 node_bin = Some("node".to_string());
@@ -613,7 +674,7 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
             }
         }
     }
-    
+
     if node_bin.is_none() {
         // Even without Node, check if bunx is available (bun can run copilot-api)
         let bunx_paths: Vec<String> = if cfg!(target_os = "macos") {
@@ -633,7 +694,7 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
                 "/usr/local/bin/bunx".to_string(),
             ]
         };
-        
+
         let mut bunx_bin: Option<String> = None;
         for path in &bunx_paths {
             let check = app.shell().command(path).args(["--version"]).output().await;
@@ -643,7 +704,7 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
                 break;
             }
         }
-        
+
         if bunx_bin.is_some() {
             // Bun available, can still run copilot-api via bunx
             return Ok(CopilotApiDetection {
@@ -660,7 +721,7 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
                 checked_copilot_paths: vec![],
             });
         }
-        
+
         return Ok(CopilotApiDetection {
             installed: false,
             version: None,
@@ -675,43 +736,61 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
             checked_copilot_paths: vec![],
         });
     }
-    
+
     // Derive npm/npx paths from node path (handle Windows and Unix paths)
-    let npx_bin = node_bin.as_ref().map(|n| {
-        if cfg!(target_os = "windows") {
-            if n == "node" || n == "node.exe" {
+    let npx_bin = node_bin
+        .as_ref()
+        .map(|n| {
+            if cfg!(target_os = "windows") {
+                if n == "node" || n == "node.exe" {
+                    "npx.cmd".to_string()
+                } else {
+                    n.replace("\\node.exe", "\\npx.cmd")
+                        .replace("/node.exe", "/npx.cmd")
+                        .replace("\\node", "\\npx")
+                        .replace("/node", "/npx")
+                }
+            } else {
+                let n_trimmed = n.trim();
+                if n_trimmed == "node" {
+                    "npx".to_string()
+                } else if n_trimmed.ends_with("/node") {
+                    let node_len = "/node".len();
+                    format!("{}/npx", &n_trimmed[..n_trimmed.len() - node_len])
+                } else {
+                    // Fallback: npx should be alongside node
+                    "npx".to_string()
+                }
+            }
+        })
+        .unwrap_or_else(|| {
+            if cfg!(target_os = "windows") {
                 "npx.cmd".to_string()
             } else {
-                n.replace("\\node.exe", "\\npx.cmd")
-                    .replace("/node.exe", "/npx.cmd")
-                    .replace("\\node", "\\npx")
-                    .replace("/node", "/npx")
-            }
-        } else {
-            let n_trimmed = n.trim();
-            if n_trimmed == "node" {
                 "npx".to_string()
-            } else if n_trimmed.ends_with("/node") {
-                let node_len = "/node".len();
-                format!("{}/npx", &n_trimmed[..n_trimmed.len() - node_len])
+            }
+        });
+
+    let npm_bin = node_bin
+        .as_ref()
+        .map(|n| {
+            if cfg!(target_os = "windows") {
+                n.replace("\\node.exe", "\\npm.cmd")
+                    .replace("/node.exe", "/npm.cmd")
+                    .replace("\\node", "\\npm")
+                    .replace("/node", "/npm")
             } else {
-                // Fallback: npx should be alongside node
-                "npx".to_string()
+                n.replace("/node", "/npm")
             }
-        }
-    }).unwrap_or_else(|| if cfg!(target_os = "windows") { "npx.cmd".to_string() } else { "npx".to_string() });
-    
-    let npm_bin = node_bin.as_ref().map(|n| {
-        if cfg!(target_os = "windows") {
-            n.replace("\\node.exe", "\\npm.cmd")
-                .replace("/node.exe", "/npm.cmd")
-                .replace("\\node", "\\npm")
-                .replace("/node", "/npm")
-        } else {
-            n.replace("/node", "/npm")
-        }
-    }).unwrap_or_else(|| if cfg!(target_os = "windows") { "npm.cmd".to_string() } else { "npm".to_string() });
-    
+        })
+        .unwrap_or_else(|| {
+            if cfg!(target_os = "windows") {
+                "npm.cmd".to_string()
+            } else {
+                "npm".to_string()
+            }
+        });
+
     // Check for bun/bunx (preferred over npx - faster startup)
     let bunx_paths: Vec<String> = if cfg!(target_os = "macos") {
         vec![
@@ -730,7 +809,7 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
             "/usr/local/bin/bunx".to_string(),
         ]
     };
-    
+
     let mut bunx_bin: Option<String> = None;
     for path in &bunx_paths {
         let check = app.shell().command(path).args(["--version"]).output().await;
@@ -740,7 +819,7 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
             break;
         }
     }
-    
+
     // Try to find copilot-api binary directly first
     let copilot_paths: Vec<String> = if cfg!(target_os = "macos") {
         vec![
@@ -757,14 +836,17 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
             format!("{}/Library/pnpm/copilot-api", home_str),
             format!("{}/.local/share/pnpm/copilot-api", home_str),
             format!("{}/.yarn/bin/copilot-api", home_str),
-            format!("{}/.config/yarn/global/node_modules/.bin/copilot-api", home_str),
+            format!(
+                "{}/.config/yarn/global/node_modules/.bin/copilot-api",
+                home_str
+            ),
         ]
     } else if cfg!(target_os = "windows") {
         vec![
             // npm global bin (most common location after npm install -g)
             format!("{}/AppData/Roaming/npm/copilot-api.cmd", home_str),
             // Version managers on Windows
-            format!("{}/.volta/bin/copilot-api.exe", home_str),  // Volta
+            format!("{}/.volta/bin/copilot-api.exe", home_str), // Volta
             format!("{}/AppData/Roaming/nvm/current/copilot-api.cmd", home_str), // nvm-windows
             format!("{}/scoop/apps/nodejs/current/bin/copilot-api.cmd", home_str), // Scoop
             // Fallback to PATH
@@ -781,7 +863,7 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
             "/usr/bin/copilot-api".to_string(),
         ]
     };
-    
+
     for path in &copilot_paths {
         let check = app.shell().command(path).args(["--version"]).output().await;
         if check.as_ref().map(|o| o.status.success()).unwrap_or(false) {
@@ -800,12 +882,18 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
             });
         }
     }
-    
+
     // Check if copilot-api is installed globally via npm
     let npm_list = app
         .shell()
         .command(&npm_bin)
-        .args(["list", "-g", "@jeffreycao/copilot-api", "--depth=0", "--json"])
+        .args([
+            "list",
+            "-g",
+            "@jeffreycao/copilot-api",
+            "--depth=0",
+            "--json",
+        ])
         .output()
         .await;
 
@@ -815,12 +903,14 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&stdout) {
                 if let Some(deps) = json.get("dependencies") {
                     if let Some(copilot) = deps.get("@jeffreycao/copilot-api") {
-                        let version = copilot.get("version")
+                        let version = copilot
+                            .get("version")
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string());
-                        
+
                         // npm says it's installed, derive copilot-api path from npm prefix
-                        let copilot_bin = node_bin.as_ref()
+                        let copilot_bin = node_bin
+                            .as_ref()
                             .map(|n| {
                                 if cfg!(target_os = "windows") {
                                     // Windows: node.exe -> copilot-api.cmd
@@ -839,7 +929,7 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
                                     "copilot-api".to_string()
                                 }
                             });
-                        
+
                         return Ok(CopilotApiDetection {
                             installed: true,
                             version,
@@ -858,7 +948,7 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
             }
         }
     }
-    
+
     // Not installed globally
     Ok(CopilotApiDetection {
         installed: false,
@@ -881,7 +971,7 @@ pub async fn install_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiInst
     // Including version managers: Volta, nvm, fnm, asdf
     let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("~"));
     let home_str = home.to_string_lossy();
-    
+
     let npm_paths: Vec<String> = if cfg!(target_os = "macos") {
         vec![
             // Version managers (most common for developers)
@@ -901,7 +991,7 @@ pub async fn install_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiInst
             "C:\\Program Files\\nodejs\\npm.cmd".to_string(),
             "C:\\Program Files (x86)\\nodejs\\npm.cmd".to_string(),
             // Version managers on Windows
-            format!("{}/.volta/bin/npm.exe", home_str),  // Volta
+            format!("{}/.volta/bin/npm.exe", home_str), // Volta
             format!("{}/AppData/Roaming/nvm/current/npm.cmd", home_str), // nvm-windows
             format!("{}/AppData/Local/fnm_multishells/npm.cmd", home_str), // fnm
             format!("{}/scoop/apps/nodejs/current/npm.cmd", home_str), // Scoop
@@ -922,7 +1012,7 @@ pub async fn install_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiInst
             "/home/linuxbrew/.linuxbrew/bin/npm".to_string(),
         ]
     };
-    
+
     let mut npm_bin: Option<String> = None;
     for path in &npm_paths {
         let check = app.shell().command(path).args(["--version"]).output().await;
@@ -931,26 +1021,32 @@ pub async fn install_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiInst
             break;
         }
     }
-    
+
     // Also try just "npm" in case PATH is available
     if npm_bin.is_none() {
-        let check = app.shell().command("npm").args(["--version"]).output().await;
+        let check = app
+            .shell()
+            .command("npm")
+            .args(["--version"])
+            .output()
+            .await;
         if check.as_ref().map(|o| o.status.success()).unwrap_or(false) {
             npm_bin = Some("npm".to_string());
         }
     }
-    
+
     let npm_bin = match npm_bin {
         Some(bin) => bin,
         None => {
             return Ok(CopilotApiInstallResult {
                 success: false,
-                message: "Node.js/npm is required. Please install Node.js from https://nodejs.org/".to_string(),
+                message: "Node.js/npm is required. Please install Node.js from https://nodejs.org/"
+                    .to_string(),
                 version: None,
             });
         }
     };
-    
+
     // Install copilot-api globally
     let install_output = app
         .shell()
@@ -959,7 +1055,7 @@ pub async fn install_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiInst
         .output()
         .await
         .map_err(|e| format!("Failed to run npm install: {}", e))?;
-    
+
     if !install_output.status.success() {
         let stderr = String::from_utf8_lossy(&install_output.stderr);
         return Ok(CopilotApiInstallResult {
@@ -968,15 +1064,21 @@ pub async fn install_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiInst
             version: None,
         });
     }
-    
+
     // Get the installed version
     let detection = detect_copilot_api(app).await?;
-    
+
     if detection.installed {
         Ok(CopilotApiInstallResult {
             success: true,
-            message: format!("Successfully installed copilot-api{}", 
-                detection.version.as_ref().map(|v| format!(" v{}", v)).unwrap_or_default()),
+            message: format!(
+                "Successfully installed copilot-api{}",
+                detection
+                    .version
+                    .as_ref()
+                    .map(|v| format!(" v{}", v))
+                    .unwrap_or_default()
+            ),
             version: detection.version,
         })
     } else {

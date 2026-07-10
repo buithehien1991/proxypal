@@ -11,7 +11,8 @@ use tauri::State;
 // ============================================
 
 #[tauri::command]
-pub async fn get_claude_code_settings() -> Result<crate::types::agents::ClaudeCodeSettings, String> {
+pub async fn get_claude_code_settings() -> Result<crate::types::agents::ClaudeCodeSettings, String>
+{
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
     let config_path = home.join(".claude").join("settings.json");
 
@@ -69,7 +70,10 @@ pub async fn get_thinking_budget_settings(
     } else {
         config.thinking_budget_custom
     };
-    Ok(ThinkingBudgetSettings { mode, custom_budget })
+    Ok(ThinkingBudgetSettings {
+        mode,
+        custom_budget,
+    })
 }
 
 #[tauri::command]
@@ -148,10 +152,7 @@ pub async fn get_close_to_tray(state: State<'_, AppState>) -> Result<bool, Strin
 }
 
 #[tauri::command]
-pub async fn set_close_to_tray(
-    state: State<'_, AppState>,
-    enabled: bool,
-) -> Result<(), String> {
+pub async fn set_close_to_tray(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
     {
         let mut config = state.config.lock().unwrap();
         config.close_to_tray = enabled;
@@ -192,10 +193,7 @@ pub async fn get_max_retry_interval(state: State<'_, AppState>) -> Result<i32, S
 
 // Set max retry interval via Management API
 #[tauri::command]
-pub async fn set_max_retry_interval(
-    state: State<'_, AppState>,
-    value: i32,
-) -> Result<(), String> {
+pub async fn set_max_retry_interval(state: State<'_, AppState>, value: i32) -> Result<(), String> {
     let port = state.config.lock().unwrap().port;
     let url = get_management_url(port, "max-retry-interval");
 
@@ -295,10 +293,7 @@ pub async fn get_websocket_auth(state: State<'_, AppState>) -> Result<bool, Stri
 
 // Set WebSocket auth via Management API
 #[tauri::command]
-pub async fn set_websocket_auth(
-    state: State<'_, AppState>,
-    value: bool,
-) -> Result<(), String> {
+pub async fn set_websocket_auth(state: State<'_, AppState>, value: bool) -> Result<(), String> {
     let port = state.config.lock().unwrap().port;
     let url = get_management_url(port, "ws-auth");
 
@@ -314,7 +309,10 @@ pub async fn set_websocket_auth(
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
-        return Err(format!("Failed to set WebSocket auth: {} - {}", status, text));
+        return Err(format!(
+            "Failed to set WebSocket auth: {} - {}",
+            status, text
+        ));
     }
 
     Ok(())
