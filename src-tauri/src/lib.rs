@@ -259,9 +259,9 @@ pub fn run() {
         proxy_process: Mutex::new(None),
         copilot_status: Mutex::new(CopilotStatus::default()),
         copilot_process: Mutex::new(None),
-			log_watcher_running: Arc::new(AtomicBool::new(false)),
-			usage_queue_collector_gen: Arc::new(AtomicU64::new(0)),
-			request_counter: Arc::new(AtomicU64::new(0)),
+        log_watcher_running: Arc::new(AtomicBool::new(false)),
+        usage_queue_collector_gen: Arc::new(AtomicU64::new(0)),
+        request_counter: Arc::new(AtomicU64::new(0)),
     };
 
     tauri::Builder::default()
@@ -516,7 +516,9 @@ pub fn run() {
                         // Stop background threads
                         state.log_watcher_running.store(false, Ordering::SeqCst);
                         // Invalidate usage-queue collector (generation bump stops the thread)
-                        state.usage_queue_collector_gen.fetch_add(1, Ordering::SeqCst);
+                        state
+                            .usage_queue_collector_gen
+                            .fetch_add(1, Ordering::SeqCst);
 
                         // Kill cliproxyapi process
                         if let Ok(mut process_guard) = state.proxy_process.lock() {

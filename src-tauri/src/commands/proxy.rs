@@ -2,11 +2,11 @@ use std::sync::atomic::Ordering;
 use tauri::{Emitter, Manager, State};
 use tauri_plugin_shell::ShellExt;
 
+use crate::commands::usage::start_usage_queue_collector;
 use crate::config::AppConfig;
 use crate::get_management_key;
-    use crate::commands::usage::start_usage_queue_collector;
-    use crate::helpers::log_watcher::start_log_watcher;
-    use crate::state::AppState;
+use crate::helpers::log_watcher::start_log_watcher;
+use crate::state::AppState;
 use crate::types::ProxyStatus;
 use crate::GPT5_BASE_MODELS;
 use crate::GPT5_REASONING_SUFFIXES;
@@ -664,10 +664,10 @@ pub async fn start_proxy(
         let has_claude_oauth = auth.claude > 0;
         let has_claude_apikey = !config.claude_api_keys.is_empty();
         if has_antigravity && (has_claude_oauth || has_claude_apikey) {
-                "# Prevent Antigravity from registering Claude model variants\n\
+            "# Prevent Antigravity from registering Claude model variants\n\
                      # when both providers are configured\n\
                      oauth-excluded-models:\n  antigravity:\n    - \"gemini-claude-*\"\n"
-                    .to_string()
+                .to_string()
         } else {
             String::new()
         }
@@ -786,20 +786,20 @@ pub async fn start_proxy(
     // Sync settings via Management API (best-effort, don't fail proxy start)
     if ready {
         let _ = client
-                .put(format!(
-                    "http://127.0.0.1:{}/v0/management/usage-statistics-enabled",
-                    port
-                ))
+            .put(format!(
+                "http://127.0.0.1:{}/v0/management/usage-statistics-enabled",
+                port
+            ))
             .header("X-Management-Key", &get_management_key())
             .json(&serde_json::json!({"value": config.usage_stats_enabled}))
             .send()
             .await;
 
         let _ = client
-                .put(format!(
-                    "http://127.0.0.1:{}/v0/management/max-retry-interval",
-                    port
-                ))
+            .put(format!(
+                "http://127.0.0.1:{}/v0/management/max-retry-interval",
+                port
+            ))
             .header("X-Management-Key", &get_management_key())
             .json(&serde_json::json!({"value": config.max_retry_interval}))
             .send()
@@ -817,14 +817,14 @@ pub async fn start_proxy(
     std::thread::sleep(std::time::Duration::from_millis(100)); // Give old watcher time to stop
     log_watcher_running.store(true, Ordering::SeqCst);
 
-        let app_handle2 = app.clone();
-        start_log_watcher(app_handle2, log_path, log_watcher_running, request_counter);
+    let app_handle2 = app.clone();
+    start_log_watcher(app_handle2, log_path, log_watcher_running, request_counter);
 
-        // Start usage-queue collector
-        let usage_collector_gen = state.usage_queue_collector_gen.clone();
-        start_usage_queue_collector(usage_collector_gen, config.port);
+    // Start usage-queue collector
+    let usage_collector_gen = state.usage_queue_collector_gen.clone();
+    start_usage_queue_collector(usage_collector_gen, config.port);
 
-        // Update status
+    // Update status
     let new_status = {
         let mut status = state.proxy_status.lock().unwrap();
         status.running = true;
@@ -852,9 +852,11 @@ pub async fn stop_proxy(
         }
     }
 
-        // Stop the log watcher and usage collector
-        state.log_watcher_running.store(false, Ordering::SeqCst);
-        state.usage_queue_collector_gen.fetch_add(1, Ordering::SeqCst);
+    // Stop the log watcher and usage collector
+    state.log_watcher_running.store(false, Ordering::SeqCst);
+    state
+        .usage_queue_collector_gen
+        .fetch_add(1, Ordering::SeqCst);
 
     // Kill the tracked child process
     {

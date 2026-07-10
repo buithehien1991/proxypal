@@ -137,9 +137,7 @@ fn parse_log_line(line: &str) -> LogEntry {
                 return LogEntry {
                     timestamp: String::new(),
                     level: level.to_string(),
-                    message: rest
-                        .trim_start_matches([':', ' '])
-                        .to_string(),
+                    message: rest.trim_start_matches([':', ' ']).to_string(),
                 };
             }
         }

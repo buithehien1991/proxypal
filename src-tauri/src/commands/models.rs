@@ -633,10 +633,10 @@ pub(crate) fn get_model_display_name(model_id: &str, owned_by: &str, source: &st
     // Add provider prefix for clarity
     let name = match owned_by {
         "copilot" | "github-copilot" => format!("Copilot {}", base_name),
-            "anthropic" => base_name.to_string(),
-            "google" => base_name.to_string(),
-            "openai" => base_name.to_string(),
-            "qwen" => base_name.to_string(),
+        "anthropic" => base_name.to_string(),
+        "google" => base_name.to_string(),
+        "openai" => base_name.to_string(),
+        "qwen" => base_name.to_string(),
         _ => base_name,
     };
 

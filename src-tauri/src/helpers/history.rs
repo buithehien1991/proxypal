@@ -76,11 +76,8 @@ pub(crate) fn update_model_stats(agg: &mut Aggregate, req: &RequestLog) {
         req.model.clone()
     };
 
-        let entry = agg
-            .model_stats
-            .entry(model)
-            .or_default();
-        entry.requests += 1;
+    let entry = agg.model_stats.entry(model).or_default();
+    entry.requests += 1;
     if req.status < 400 {
         entry.success_count += 1;
     }
@@ -97,11 +94,8 @@ pub(crate) fn update_provider_stats(agg: &mut Aggregate, req: &RequestLog) {
         req.provider.clone()
     };
 
-        let entry = agg
-            .provider_stats
-            .entry(provider)
-            .or_default();
-        entry.requests += 1;
+    let entry = agg.provider_stats.entry(provider).or_default();
+    entry.requests += 1;
     if req.status < 400 {
         entry.success_count += 1;
     }

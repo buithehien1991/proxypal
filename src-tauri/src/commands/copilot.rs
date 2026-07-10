@@ -531,7 +531,7 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
                     .flatten()
                     .filter(|e| e.path().join("bin/node").exists())
                     .collect();
-                    versions.sort_by_key(|b| std::cmp::Reverse(b.file_name())); // Descending
+                versions.sort_by_key(|b| std::cmp::Reverse(b.file_name())); // Descending
                 if let Some(entry) = versions.first() {
                     let node_path = entry.path().join("bin/node");
                     return Some(node_path.to_string_lossy().to_string());
@@ -565,8 +565,8 @@ pub async fn detect_copilot_api(app: tauri::AppHandle) -> Result<CopilotApiDetec
                 // Sort descending by filename (lexicographic); works well for semver-like
                 // names (e.g. "20.10.0" > "20.9.0" only when zero-padded, but this is the
                 // same best-effort approach used for nvm above)
-                    versions.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
-                    if let Some(entry) = versions.first() {
+                versions.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
+                if let Some(entry) = versions.first() {
                     let node_path = entry.path().join(node_bin);
                     return Some(node_path.to_string_lossy().to_string());
                 }

@@ -8,8 +8,7 @@ use crate::helpers::history::{
 };
 use crate::state::AppState;
 use crate::types::{
-    Aggregate, ModelUsage, ProviderUsage, RequestHistory, RequestLog, TimeSeriesPoint,
-    UsageStats,
+    Aggregate, ModelUsage, ProviderUsage, RequestHistory, RequestLog, TimeSeriesPoint, UsageStats,
 };
 use crate::utils::estimate_request_cost;
 use serde::Deserialize;
@@ -110,12 +109,12 @@ fn usage_detail_to_totals(detail: &UsageQueueDetail) -> (u64, u64, u64, u64) {
     (input, output, cached, total)
 }
 
-    fn trim_timeseries(series: &mut Vec<TimeSeriesPoint>, max_len: usize) {
-        series.sort_by(|a, b| a.label.cmp(&b.label));
-        if series.len() > max_len {
-            *series = series.split_off(series.len() - max_len);
-        }
+fn trim_timeseries(series: &mut Vec<TimeSeriesPoint>, max_len: usize) {
+    series.sort_by(|a, b| a.label.cmp(&b.label));
+    if series.len() > max_len {
+        *series = series.split_off(series.len() - max_len);
     }
+}
 
 fn apply_usage_queue_records(
     records: &[UsageQueueRecord],
@@ -179,10 +178,7 @@ fn apply_usage_queue_records(
         }
 
         if !model_name.is_empty() && model_name != "unknown" {
-            let model_stats = agg
-                .model_stats
-                .entry(model_name)
-                .or_default();
+            let model_stats = agg.model_stats.entry(model_name).or_default();
             model_stats.requests += 1;
             if !record.failed {
                 model_stats.success_count += 1;
@@ -193,10 +189,7 @@ fn apply_usage_queue_records(
             model_stats.cached_tokens += cached_tokens;
         }
 
-        let provider_stats = agg
-            .provider_stats
-            .entry(provider_name)
-            .or_default();
+        let provider_stats = agg.provider_stats.entry(provider_name).or_default();
         provider_stats.requests += 1;
         if !record.failed {
             provider_stats.success_count += 1;
@@ -264,39 +257,39 @@ pub(crate) fn sync_usage_from_queue_blocking(port: u16) -> Result<(), String> {
     save_request_history(&history)?;
     save_aggregate(&agg)?;
     Ok(())
-    }
+}
 
-    /// Spawns a background usage-queue collector thread.
-    /// Uses a generation/epoch token (Arc<AtomicU64>) instead of a running flag.
-    /// Each call bumps the generation; the spawned thread captures the current value
-    /// and exits when the generation advances (via stop or exit).
-    /// Prevents stale collector threads from surviving a stop->start cycle.
-    pub(crate) fn start_usage_queue_collector(gen: Arc<AtomicU64>, port: u16) {
-        // fetch_add returns the old value; +1 gives the post-increment generation
-        // that the spawned thread will compare against gen.load() to know when to exit.
-        let my_gen = gen.fetch_add(1, Ordering::SeqCst) + 1;
+/// Spawns a background usage-queue collector thread.
+/// Uses a generation/epoch token (Arc<AtomicU64>) instead of a running flag.
+/// Each call bumps the generation; the spawned thread captures the current value
+/// and exits when the generation advances (via stop or exit).
+/// Prevents stale collector threads from surviving a stop->start cycle.
+pub(crate) fn start_usage_queue_collector(gen: Arc<AtomicU64>, port: u16) {
+    // fetch_add returns the old value; +1 gives the post-increment generation
+    // that the spawned thread will compare against gen.load() to know when to exit.
+    let my_gen = gen.fetch_add(1, Ordering::SeqCst) + 1;
 
-        std::thread::spawn(move || {
-            // Brief delay so the proxy has time to become fully ready
-            std::thread::sleep(Duration::from_secs(2));
+    std::thread::spawn(move || {
+        // Brief delay so the proxy has time to become fully ready
+        std::thread::sleep(Duration::from_secs(2));
 
-            while gen.load(Ordering::SeqCst) == my_gen {
-                if let Err(e) = sync_usage_from_queue_blocking(port) {
-                    eprintln!("[usage-collector] queue sync failed: {e}");
-                }
-                // Sleep in 1s chunks — responsive to generation change while avoiding busy-loop
-                let tick_end = std::time::Instant::now() + Duration::from_secs(30);
-                while std::time::Instant::now() < tick_end {
-                    if gen.load(Ordering::SeqCst) != my_gen {
-                        return;
-                    }
-                    std::thread::sleep(Duration::from_millis(1000));
-                }
+        while gen.load(Ordering::SeqCst) == my_gen {
+            if let Err(e) = sync_usage_from_queue_blocking(port) {
+                eprintln!("[usage-collector] queue sync failed: {e}");
             }
-        });
-    }
+            // Sleep in 1s chunks — responsive to generation change while avoiding busy-loop
+            let tick_end = std::time::Instant::now() + Duration::from_secs(30);
+            while std::time::Instant::now() < tick_end {
+                if gen.load(Ordering::SeqCst) != my_gen {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(1000));
+            }
+        }
+    });
+}
 
-    async fn sync_usage_from_queue_async(port: u16) -> Result<RequestHistory, String> {
+async fn sync_usage_from_queue_async(port: u16) -> Result<RequestHistory, String> {
     const BATCH_SIZE: usize = 500;
     const MAX_BATCHES: usize = 20;
 
@@ -351,12 +344,13 @@ pub(crate) fn sync_usage_from_queue_blocking(port: u16) -> Result<(), String> {
     Ok(history)
 }
 
-
-
 // Blocking version of sync — only uses /v0/management/usage-queue
 fn sync_usage_from_proxy_blocking(port: u16) {
     if let Err(e) = sync_usage_from_queue_blocking(port) {
-        eprintln!("[usage] sync_usage_from_proxy_blocking: queue sync failed: {}", e);
+        eprintln!(
+            "[usage] sync_usage_from_proxy_blocking: queue sync failed: {}",
+            e
+        );
     }
 }
 
@@ -647,7 +641,10 @@ pub fn export_usage_stats() -> Result<serde_json::Value, String> {
 pub fn import_usage_stats(data: serde_json::Value) -> Result<serde_json::Value, String> {
     let version = data.get("version").and_then(|v| v.as_i64()).unwrap_or(0);
     if version != 1 {
-        return Err(format!("Unsupported export version: {}. Expected 1.", version));
+        return Err(format!(
+            "Unsupported export version: {}. Expected 1.",
+            version
+        ));
     }
 
     let agg: Aggregate = serde_json::from_value(
@@ -677,9 +674,9 @@ pub fn import_usage_stats(data: serde_json::Value) -> Result<serde_json::Value, 
 }
 
 #[cfg(test)]
-    mod tests {
-        use super::*;
-        use std::io::Read;
+mod tests {
+    use super::*;
+    use std::io::Read;
 
     #[test]
     fn test_usage_detail_to_totals() {
@@ -706,7 +703,10 @@ pub fn import_usage_stats(data: serde_json::Value) -> Result<serde_json::Value, 
         };
         let (input, output, cached, total) = usage_detail_to_totals(&detail);
         assert_eq!(input, 0, "negative clamps to 0");
-        assert_eq!(output, 10, "negative reasoning clamps to 0, only output counts");
+        assert_eq!(
+            output, 10,
+            "negative reasoning clamps to 0, only output counts"
+        );
         assert_eq!(cached, 0, "zero cached");
         assert_eq!(total, 10, "0 + 10");
     }
@@ -774,12 +774,30 @@ pub fn import_usage_stats(data: serde_json::Value) -> Result<serde_json::Value, 
         let mut history = RequestHistory::default();
         let mut agg = Aggregate::default();
         apply_usage_queue_records(&records, &mut history, &mut agg);
-        assert!(agg.total_tokens_in > 0, "total_tokens_in should be non-zero");
-        assert!(agg.total_tokens_out > 0, "total_tokens_out should be non-zero");
-        assert!(agg.total_tokens_cached > 0, "total_tokens_cached should be non-zero");
-        assert!(history.total_tokens_in > 0, "history total_tokens_in should be non-zero");
-        assert!(history.total_tokens_out > 0, "history total_tokens_out should be non-zero");
-        assert!(history.total_tokens_cached > 0, "history total_tokens_cached should be non-zero");
+        assert!(
+            agg.total_tokens_in > 0,
+            "total_tokens_in should be non-zero"
+        );
+        assert!(
+            agg.total_tokens_out > 0,
+            "total_tokens_out should be non-zero"
+        );
+        assert!(
+            agg.total_tokens_cached > 0,
+            "total_tokens_cached should be non-zero"
+        );
+        assert!(
+            history.total_tokens_in > 0,
+            "history total_tokens_in should be non-zero"
+        );
+        assert!(
+            history.total_tokens_out > 0,
+            "history total_tokens_out should be non-zero"
+        );
+        assert!(
+            history.total_tokens_cached > 0,
+            "history total_tokens_cached should be non-zero"
+        );
     }
 
     #[test]
@@ -917,137 +935,137 @@ pub fn import_usage_stats(data: serde_json::Value) -> Result<serde_json::Value, 
             .collect();
         trim_timeseries(&mut series, 5);
         assert_eq!(series.len(), 5);
-            assert_eq!(series[0].label, "2025-06-16");
-            assert_eq!(series[4].label, "2025-06-20");
-        }
+        assert_eq!(series[0].label, "2025-06-16");
+        assert_eq!(series[4].label, "2025-06-20");
+    }
 
-        #[test]
-        fn test_collector_starts_and_generation_increments() {
-            let gen = Arc::new(AtomicU64::new(0));
-            let port = 9999;
-            let before = gen.load(Ordering::SeqCst);
+    #[test]
+    fn test_collector_starts_and_generation_increments() {
+        let gen = Arc::new(AtomicU64::new(0));
+        let port = 9999;
+        let before = gen.load(Ordering::SeqCst);
 
-            start_usage_queue_collector(gen.clone(), port);
-            // Generation should have been bumped by 1
-            assert_eq!(gen.load(Ordering::SeqCst), before + 1);
-        }
+        start_usage_queue_collector(gen.clone(), port);
+        // Generation should have been bumped by 1
+        assert_eq!(gen.load(Ordering::SeqCst), before + 1);
+    }
 
-        #[test]
-        fn test_collector_stops_when_generation_advances() {
-            let gen = Arc::new(AtomicU64::new(0));
-            let port = 9999;
+    #[test]
+    fn test_collector_stops_when_generation_advances() {
+        let gen = Arc::new(AtomicU64::new(0));
+        let port = 9999;
 
-            start_usage_queue_collector(gen.clone(), port);
-            assert_eq!(gen.load(Ordering::SeqCst), 1, "start bumps to 1");
+        start_usage_queue_collector(gen.clone(), port);
+        assert_eq!(gen.load(Ordering::SeqCst), 1, "start bumps to 1");
 
-            // Signal stop via generation bump
-            gen.fetch_add(1, Ordering::SeqCst);
-            assert_eq!(gen.load(Ordering::SeqCst), 2, "stop bumps to 2");
+        // Signal stop via generation bump
+        gen.fetch_add(1, Ordering::SeqCst);
+        assert_eq!(gen.load(Ordering::SeqCst), 2, "stop bumps to 2");
 
-            // Give the thread a moment to notice the change and exit
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
+        // Give the thread a moment to notice the change and exit
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
 
-        #[test]
-        fn test_collector_does_not_block() {
-            let gen = Arc::new(AtomicU64::new(0));
-            let port = 9999;
+    #[test]
+    fn test_collector_does_not_block() {
+        let gen = Arc::new(AtomicU64::new(0));
+        let port = 9999;
 
-            let before = std::time::Instant::now();
-            start_usage_queue_collector(gen.clone(), port);
-            // Should return near-instantly (not wait for any sleep)
-            assert!(before.elapsed() < std::time::Duration::from_millis(500));
-        }
+        let before = std::time::Instant::now();
+        start_usage_queue_collector(gen.clone(), port);
+        // Should return near-instantly (not wait for any sleep)
+        assert!(before.elapsed() < std::time::Duration::from_millis(500));
+    }
 
-        #[test]
-        fn test_collector_stop_start_prevents_stale_thread() {
-            let gen = Arc::new(AtomicU64::new(0));
-            let port = 9999;
+    #[test]
+    fn test_collector_stop_start_prevents_stale_thread() {
+        let gen = Arc::new(AtomicU64::new(0));
+        let port = 9999;
 
-            // Start the collector (captures generation 1 after bump)
-            start_usage_queue_collector(gen.clone(), port);
-            let after_first = gen.load(Ordering::SeqCst);
-            assert_eq!(after_first, 1, "first start bumps to 1");
+        // Start the collector (captures generation 1 after bump)
+        start_usage_queue_collector(gen.clone(), port);
+        let after_first = gen.load(Ordering::SeqCst);
+        assert_eq!(after_first, 1, "first start bumps to 1");
 
-            // Stop: bump generation to invalidate the running thread
-            gen.fetch_add(1, Ordering::SeqCst);
-            assert_eq!(gen.load(Ordering::SeqCst), 2, "stop bumps to 2");
+        // Stop: bump generation to invalidate the running thread
+        gen.fetch_add(1, Ordering::SeqCst);
+        assert_eq!(gen.load(Ordering::SeqCst), 2, "stop bumps to 2");
 
-            // Start again: bumps generation; new thread captures gen=3, starts fresh
-            start_usage_queue_collector(gen.clone(), port);
-            assert_eq!(gen.load(Ordering::SeqCst), 3, "second start bumps to 3");
+        // Start again: bumps generation; new thread captures gen=3, starts fresh
+        start_usage_queue_collector(gen.clone(), port);
+        assert_eq!(gen.load(Ordering::SeqCst), 3, "second start bumps to 3");
 
-            // Thread 1 (captured gen=1) sees gen=3 != 1 => exits on next tick
-            // Thread 2 (captured gen=3) sees gen=3 == 3 => keeps running
-            // No stale thread survived the stop/start cycle
-        }
+        // Thread 1 (captured gen=1) sees gen=3 != 1 => exits on next tick
+        // Thread 2 (captured gen=3) sees gen=3 == 3 => keeps running
+        // No stale thread survived the stop/start cycle
+    }
 
-        #[test]
-        fn test_collector_respects_no_proxy_config() {
-            let gen = Arc::new(AtomicU64::new(0));
-            let port = 0; // Non-running port — collector should handle connection errors gracefully
+    #[test]
+    fn test_collector_respects_no_proxy_config() {
+        let gen = Arc::new(AtomicU64::new(0));
+        let port = 0; // Non-running port — collector should handle connection errors gracefully
 
-            start_usage_queue_collector(gen.clone(), port);
-            assert_eq!(gen.load(Ordering::SeqCst), 1, "start bumps to 1");
+        start_usage_queue_collector(gen.clone(), port);
+        assert_eq!(gen.load(Ordering::SeqCst), 1, "start bumps to 1");
 
-            // Let it try a sync cycle (will fail on connection, handled gracefully)
-            std::thread::sleep(std::time::Duration::from_millis(200));
+        // Let it try a sync cycle (will fail on connection, handled gracefully)
+        std::thread::sleep(std::time::Duration::from_millis(200));
 
-            // Stop
-            gen.fetch_add(1, Ordering::SeqCst);
-            std::thread::sleep(std::time::Duration::from_millis(50));
-        }
+        // Stop
+        gen.fetch_add(1, Ordering::SeqCst);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
 
-        #[test]
-        fn test_collector_attempts_sync_before_cancellation() {
-            // Binds a TCP listener on a random port and starts the collector
-            // pointing at it.  If (and only if) the collector enters the sync loop
-            // and calls sync_usage_from_queue_blocking, it will connect to this port.
-            // Before the off-by-one fix, the thread exited immediately because
-            // my_gen held the old pre-increment value; recv_timeout would fail.
-            let listener = std::net::TcpListener::bind("127.0.0.1:0")
-                .expect("should bind test TCP listener");
-            let port = listener.local_addr().unwrap().port();
+    #[test]
+    fn test_collector_attempts_sync_before_cancellation() {
+        // Binds a TCP listener on a random port and starts the collector
+        // pointing at it.  If (and only if) the collector enters the sync loop
+        // and calls sync_usage_from_queue_blocking, it will connect to this port.
+        // Before the off-by-one fix, the thread exited immediately because
+        // my_gen held the old pre-increment value; recv_timeout would fail.
+        let listener =
+            std::net::TcpListener::bind("127.0.0.1:0").expect("should bind test TCP listener");
+        let port = listener.local_addr().unwrap().port();
 
-            let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel();
 
-            std::thread::spawn(move || {
-                let result = listener.accept().ok().and_then(|(mut stream, _)| {
-                    // Read a bit of the HTTP request to verify the endpoint
-                    let mut buf = [0; 4096];
-                    stream
-                        .set_read_timeout(Some(std::time::Duration::from_secs(1)))
-                        .ok();
-                    match stream.read(&mut buf) {
-                        Ok(0) | Err(_) => None,
-                        Ok(n) => Some(buf[..n].to_vec()),
-                    }
-                });
-                let _ = tx.send(result);
+        std::thread::spawn(move || {
+            let result = listener.accept().ok().and_then(|(mut stream, _)| {
+                // Read a bit of the HTTP request to verify the endpoint
+                let mut buf = [0; 4096];
+                stream
+                    .set_read_timeout(Some(std::time::Duration::from_secs(1)))
+                    .ok();
+                match stream.read(&mut buf) {
+                    Ok(0) | Err(_) => None,
+                    Ok(n) => Some(buf[..n].to_vec()),
+                }
             });
+            let _ = tx.send(result);
+        });
 
-            let gen = Arc::new(AtomicU64::new(0));
-            start_usage_queue_collector(gen.clone(), port);
-            assert_eq!(gen.load(Ordering::SeqCst), 1, "start bumps to 1");
+        let gen = Arc::new(AtomicU64::new(0));
+        start_usage_queue_collector(gen.clone(), port);
+        assert_eq!(gen.load(Ordering::SeqCst), 1, "start bumps to 1");
 
-            // Collector sleeps 2 s initially, then makes the HTTP request.
-            // 10 s timeout covers 2 s sleep + 5 s reqwest timeout + margin.
-            let request_bytes = rx
+        // Collector sleeps 2 s initially, then makes the HTTP request.
+        // 10 s timeout covers 2 s sleep + 5 s reqwest timeout + margin.
+        let request_bytes = rx
                 .recv_timeout(std::time::Duration::from_secs(10))
             .expect(
                 "collector must connect to TCP port within 10 s — proves it entered the sync loop and called sync_usage_from_queue_blocking",
             )
                 .expect("collector should send HTTP request data");
 
-            let request = String::from_utf8_lossy(&request_bytes);
-            assert!(
-                request.contains("usage-queue"),
-                "collector should request the usage-queue endpoint; first line: {}",
-                request.lines().next().unwrap_or("(empty)")
-            );
+        let request = String::from_utf8_lossy(&request_bytes);
+        assert!(
+            request.contains("usage-queue"),
+            "collector should request the usage-queue endpoint; first line: {}",
+            request.lines().next().unwrap_or("(empty)")
+        );
 
-            // Signal stop
-            gen.fetch_add(1, Ordering::SeqCst);
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
+        // Signal stop
+        gen.fetch_add(1, Ordering::SeqCst);
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
+}
