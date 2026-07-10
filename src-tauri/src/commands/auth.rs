@@ -108,12 +108,10 @@ pub async fn get_oauth_url(
             "http://127.0.0.1:{}/v0/management/kimi-auth-url?is_webui=true",
             port
         ),
-        "vertex" => {
-            return Err(
-                "Vertex uses service account import, not OAuth. Use import_vertex_credential instead."
-                    .to_string(),
-            )
-        }
+        "vertex" => return Err(
+            "Vertex uses service account import, not OAuth. Use import_vertex_credential instead."
+                .to_string(),
+        ),
         _ => return Err(format!("Unknown provider: {}", provider)),
     };
 
@@ -178,15 +176,14 @@ pub async fn get_device_code(
 
     // Build endpoint WITHOUT ?is_webui=true to trigger device-code flow
     let endpoint = match provider.as_str() {
-        "openai" => format!(
-            "http://127.0.0.1:{}/v0/management/codex-auth-url",
-            port
-        ),
-        "qwen" => format!(
-            "http://127.0.0.1:{}/v0/management/qwen-auth-url",
-            port
-        ),
-        _ => return Err(format!("Device code flow not supported for provider: {}", provider)),
+        "openai" => format!("http://127.0.0.1:{}/v0/management/codex-auth-url", port),
+        "qwen" => format!("http://127.0.0.1:{}/v0/management/qwen-auth-url", port),
+        _ => {
+            return Err(format!(
+                "Device code flow not supported for provider: {}",
+                provider
+            ))
+        }
     };
 
     let client = crate::build_management_client();
@@ -200,10 +197,7 @@ pub async fn get_device_code(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(format!(
-            "Device code request failed ({}): {}",
-            status, body
-        ));
+        return Err(format!("Device code request failed ({}): {}", status, body));
     }
 
     let body: serde_json::Value = response
@@ -313,12 +307,10 @@ pub async fn open_oauth(
             "http://127.0.0.1:{}/v0/management/kimi-auth-url?is_webui=true",
             port
         ),
-        "vertex" => {
-            return Err(
-                "Vertex uses service account import, not OAuth. Use import_vertex_credential instead."
-                    .to_string(),
-            )
-        }
+        "vertex" => return Err(
+            "Vertex uses service account import, not OAuth. Use import_vertex_credential instead."
+                .to_string(),
+        ),
         // Note: Kiro is handled above with direct Web UI
         _ => return Err(format!("Unknown provider: {}", provider)),
     };

@@ -141,8 +141,7 @@ pub fn detect_cli_agents(state: State<AppState>) -> Vec<AgentStatus> {
     let kiro_config = home.join(".kiro");
     let kiro_configured = if kiro_config.exists() {
         // Kiro stores auth tokens in ~/.kiro/ directory
-        kiro_config.join("config.json").exists()
-            || kiro_config.join("auth.json").exists()
+        kiro_config.join("config.json").exists() || kiro_config.join("auth.json").exists()
     } else {
         false
     };
@@ -200,7 +199,11 @@ fn wsl_detection_opt_in(value: Option<&str>) -> bool {
 
 #[cfg(target_os = "windows")]
 fn should_probe_wsl_paths() -> bool {
-    wsl_detection_opt_in(std::env::var("PROXYPAL_ENABLE_WSL_DETECTION").ok().as_deref())
+    wsl_detection_opt_in(
+        std::env::var("PROXYPAL_ENABLE_WSL_DETECTION")
+            .ok()
+            .as_deref(),
+    )
 }
 
 fn which_exists(cmd: &str) -> bool {
@@ -517,17 +520,15 @@ wire_api = "responses"
         }
 
         // CodeBuddy-CN — browser-based OAuth managed by the sidecar
-        "codebuddy" => {
-            Ok(serde_json::json!({
-                "success": true,
-                "configType": "env",
-                "shellConfig": format!(
-                    "# ProxyPal - CodeBuddy Configuration\n{}\n",
-                    env_export_line("CODEBUDDY_ENDPOINT", &endpoint),
-                ),
-                "instructions": "CodeBuddy authentication is managed by the proxy sidecar via browser OAuth (CLIProxyAPI v6.9.2+). Ensure the proxy is running and use the management panel to initiate login."
-            }))
-        }
+        "codebuddy" => Ok(serde_json::json!({
+            "success": true,
+            "configType": "env",
+            "shellConfig": format!(
+                "# ProxyPal - CodeBuddy Configuration\n{}\n",
+                env_export_line("CODEBUDDY_ENDPOINT", &endpoint),
+            ),
+            "instructions": "CodeBuddy authentication is managed by the proxy sidecar via browser OAuth (CLIProxyAPI v6.9.2+). Ensure the proxy is running and use the management panel to initiate login."
+        })),
 
         _ => Err(format!("Unknown agent: {}", agent_id)),
     }
@@ -559,9 +560,13 @@ fn configure_claude_code_agent(
         .unwrap_or_else(|| "claude-opus-4-1-20250805".to_string());
 
     // Sonnet tier: claude-sonnet-4-5 > gpt-5
-    let sonnet_model =
-        find_model(&["claude-sonnet-4-5", "claude-sonnet-4", "claude-sonnet", "gpt-5"])
-            .unwrap_or_else(|| "claude-sonnet-4-5-20250929".to_string());
+    let sonnet_model = find_model(&[
+        "claude-sonnet-4-5",
+        "claude-sonnet-4",
+        "claude-sonnet",
+        "gpt-5",
+    ])
+    .unwrap_or_else(|| "claude-sonnet-4-5-20250929".to_string());
 
     // Haiku tier: claude-haiku > gemini-claude-sonnet > gemini-2.5-flash > gpt-5-mini variants
     // IMPORTANT: Never use base gpt-5.X-codex models here — they are heavyweight Copilot models
@@ -805,8 +810,9 @@ fn configure_factory_droid_agent(
                 let mut merged_models: Vec<serde_json::Value> = Vec::new();
 
                 // Keep existing models that are NOT from proxypal (don't have proxypal-local api_key)
-                if let Some(existing_models) =
-                    existing_json.get("custom_models").and_then(|v| v.as_array())
+                if let Some(existing_models) = existing_json
+                    .get("custom_models")
+                    .and_then(|v| v.as_array())
                 {
                     for model in existing_models {
                         let is_proxypal = model
@@ -901,15 +907,12 @@ fn configure_opencode_agent(
         let is_qwen_model = m.id.to_lowercase().contains("qwen");
         // Use user's configured thinking budget
         let min_thinking_output: u64 = thinking_budget + 8192; // thinking + 8K buffer for response
-        let effective_output_limit = if is_thinking_model
-            || is_gemini3_model
-            || is_qwen3_thinking
-            || is_deepseek_thinking
-        {
-            std::cmp::max(output_limit, min_thinking_output)
-        } else {
-            output_limit
-        };
+        let effective_output_limit =
+            if is_thinking_model || is_gemini3_model || is_qwen3_thinking || is_deepseek_thinking {
+                std::cmp::max(output_limit, min_thinking_output)
+            } else {
+                output_limit
+            };
 
         // Determine modalities based on model capabilities
         // Multimodal models support text + image + pdf input
@@ -952,10 +955,9 @@ fn configure_opencode_agent(
             model_config["reasoning"] = serde_json::json!(true);
             // Check if this is a Claude/Qwen3/DeepSeek thinking model (uses thinking.budgetTokens)
             // vs OpenAI o-series (uses reasoningEffort)
-            let is_budget_thinking = (m.id.contains("claude")
-                || m.id.contains("qwen3")
-                || m.id.contains("deepseek"))
-                && m.id.contains("thinking");
+            let is_budget_thinking =
+                (m.id.contains("claude") || m.id.contains("qwen3") || m.id.contains("deepseek"))
+                    && m.id.contains("thinking");
             if is_budget_thinking {
                 // Add variants for gemini-claude-*-thinking models
                 let low_budget = 8192u64;
@@ -1163,7 +1165,11 @@ pub fn append_to_shell_profile(content: String) -> Result<String, String> {
     // if the user has never opened a PowerShell session.
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| {
-            format!("Failed to create profile directory '{}': {}", parent.display(), e)
+            format!(
+                "Failed to create profile directory '{}': {}",
+                parent.display(),
+                e
+            )
         })?;
     }
 
@@ -1214,8 +1220,7 @@ pub fn detect_ai_tools() -> Vec<DetectedTool> {
 
     // Check for VS Code (needed for Continue/Cline)
     #[cfg(target_os = "macos")]
-    let vscode_installed =
-        std::path::Path::new("/Applications/Visual Studio Code.app").exists();
+    let vscode_installed = std::path::Path::new("/Applications/Visual Studio Code.app").exists();
     #[cfg(target_os = "windows")]
     let vscode_installed = dirs::data_local_dir()
         .map(|p| p.join("Programs/Microsoft VS Code/Code.exe").exists())
@@ -1253,8 +1258,7 @@ pub fn detect_ai_tools() -> Vec<DetectedTool> {
         .map(|p| p.join("Code/User/globalStorage/saoudrizwan.claude-dev"))
         .unwrap_or_default();
     #[cfg(target_os = "linux")]
-    let cline_storage =
-        home.join(".config/Code/User/globalStorage/saoudrizwan.claude-dev");
+    let cline_storage = home.join(".config/Code/User/globalStorage/saoudrizwan.claude-dev");
 
     tools.push(DetectedTool {
         id: "cline".to_string(),
@@ -1289,9 +1293,11 @@ pub fn detect_ai_tools() -> Vec<DetectedTool> {
         .join(".vscode/extensions")
         .read_dir()
         .map(|entries| {
-            entries
-                .flatten()
-                .any(|e| e.file_name().to_string_lossy().contains("gitlab.gitlab-workflow"))
+            entries.flatten().any(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .contains("gitlab.gitlab-workflow")
+            })
         })
         .unwrap_or(false);
 
@@ -1376,10 +1382,13 @@ models:
 
 // Get setup instructions for a specific tool
 #[tauri::command]
-pub fn get_tool_setup_info(tool_id: String, state: State<AppState>) -> Result<serde_json::Value, String> {
+pub fn get_tool_setup_info(
+    tool_id: String,
+    state: State<AppState>,
+) -> Result<serde_json::Value, String> {
     let config = state.config.lock().unwrap();
     let endpoint = format!("http://localhost:{}/v1", config.port);
-    
+
     let info = match tool_id.as_str() {
         "cursor" => serde_json::json!({
             "name": "Cursor",
@@ -1496,7 +1505,7 @@ pub fn get_tool_setup_info(tool_id: String, state: State<AppState>) -> Result<se
         }),
         _ => return Err(format!("Unknown tool: {}", tool_id)),
     };
-    
+
     Ok(info)
 }
 
@@ -1532,7 +1541,10 @@ mod tests {
     fn env_export_line_generates_correct_syntax() {
         let line = env_export_line("FOO", "bar");
         #[cfg(target_os = "windows")]
-        assert_eq!(line, "$env:FOO = \"bar\"", "Windows should use PowerShell syntax");
+        assert_eq!(
+            line, "$env:FOO = \"bar\"",
+            "Windows should use PowerShell syntax"
+        );
         #[cfg(not(target_os = "windows"))]
         assert_eq!(line, "export FOO=\"bar\"", "Unix should use export syntax");
     }
@@ -1540,9 +1552,18 @@ mod tests {
     #[test]
     fn env_export_line_commented_adds_hash_prefix() {
         let line = env_export_line_commented("BAZ", "qux");
-        assert!(line.starts_with('#'), "Commented line should start with '#'");
-        assert!(line.contains("BAZ"), "Commented line should contain the key");
-        assert!(line.contains("qux"), "Commented line should contain the value");
+        assert!(
+            line.starts_with('#'),
+            "Commented line should start with '#'"
+        );
+        assert!(
+            line.contains("BAZ"),
+            "Commented line should contain the key"
+        );
+        assert!(
+            line.contains("qux"),
+            "Commented line should contain the value"
+        );
     }
 
     #[test]
@@ -1556,7 +1577,10 @@ mod tests {
     #[test]
     fn wsl_detection_opt_in_accepts_truthy_values() {
         for value in ["1", "true", "TRUE", "yes", "on"] {
-            assert!(wsl_detection_opt_in(Some(value)), "expected {value} to enable WSL detection");
+            assert!(
+                wsl_detection_opt_in(Some(value)),
+                "expected {value} to enable WSL detection"
+            );
         }
     }
 }
