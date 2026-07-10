@@ -1,3 +1,28 @@
+# ProxyPal v0.4.43
+
+**Released:** 2026-07-10
+
+## Sidecar Upgrade: CLIProxyAPI v7.2.7 → v7.2.61
+
+- Updates the pinned CLIProxyAPI sidecar to v7.2.61 and verifies downloads against upstream SHA-256 checksums.
+- Replaces removed aggregated usage endpoints with the documented usage queue, persisted by a supervised local collector.
+- Binds sidecar management to loopback, generates a per-install management secret, and enables WebSocket authentication by default.
+- Adds a sidecar management smoke test to CI and release builds across macOS ARM/Intel, Windows x64, and Linux x64.
+
+## Security and release hardening
+
+- Adds a restrictive Tauri content security policy.
+- Removes the bundled sidecar binary from Git; release builds download the pinned, verified artifact.
+- Adds an auditable release-gate runbook for clean-install, OAuth, upgrade, rollback, signing, and artifact verification.
+
+## Upgrade notes
+
+- Existing installations with the legacy management key are migrated to a unique local key on load.
+- Usage-history imports replace local history and now require confirmation.
+- OAuth and provider behavior must be verified with real accounts before publishing; see `docs/runbooks/release-gates.md`.
+
+---
+
 # ProxyPal v0.4.42
 
 **Released:** 2026-06-16

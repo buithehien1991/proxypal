@@ -73,7 +73,7 @@ jobs:
             target: aarch64-apple-darwin
             artifact_path: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
           - platform: macOS-Intel
-            os: macos-15-intel
+            os: macos-13
             target: x86_64-apple-darwin
             artifact_path: src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
           - platform: Linux
@@ -151,6 +151,30 @@ jobs:
 
           echo "Downloaded:"
           ls -la "$GITHUB_WORKSPACE/src-tauri/binaries/"
+
+      - name: Verify sidecar binary (smoke test)
+        shell: bash
+        run: |
+          set -e
+          case "${{ matrix.target }}" in
+            x86_64-pc-windows-msvc)
+              BINARY="src-tauri/binaries/cli-proxy-api-x86_64-pc-windows-msvc.exe"
+              ;;
+            aarch64-apple-darwin)
+              BINARY="src-tauri/binaries/cli-proxy-api-aarch64-apple-darwin"
+              ;;
+            x86_64-apple-darwin)
+              BINARY="src-tauri/binaries/cli-proxy-api-x86_64-apple-darwin"
+              ;;
+            x86_64-unknown-linux-gnu)
+              BINARY="src-tauri/binaries/cli-proxy-api-x86_64-unknown-linux-gnu"
+              ;;
+            *)
+              echo "Unknown target: ${{ matrix.target }}"
+              exit 1
+              ;;
+          esac
+          node scripts/sidecar-smoke.mjs --binary "$BINARY"
 
       - name: Build Tauri app
         shell: bash

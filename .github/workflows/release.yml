@@ -21,7 +21,7 @@ jobs:
         include:
           - os: macos-latest
             target: aarch64-apple-darwin
-          - os: macos-15-intel
+          - os: macos-13
             target: x86_64-apple-darwin
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
@@ -95,6 +95,47 @@ jobs:
           echo "Downloaded:"
           ls -la "$GITHUB_WORKSPACE/src-tauri/binaries/"
 
+      - name: Verify sidecar binary (smoke test)
+        shell: bash
+        run: |
+          set -e
+          case "${{ matrix.target }}" in
+            x86_64-pc-windows-msvc)
+              BINARY="src-tauri/binaries/cli-proxy-api-x86_64-pc-windows-msvc.exe"
+              ;;
+            aarch64-apple-darwin)
+              BINARY="src-tauri/binaries/cli-proxy-api-aarch64-apple-darwin"
+              ;;
+            x86_64-apple-darwin)
+              BINARY="src-tauri/binaries/cli-proxy-api-x86_64-apple-darwin"
+              ;;
+            x86_64-unknown-linux-gnu)
+              BINARY="src-tauri/binaries/cli-proxy-api-x86_64-unknown-linux-gnu"
+              ;;
+            *)
+              echo "Unknown target: ${{ matrix.target }}"
+              exit 1
+              ;;
+          esac
+          node scripts/sidecar-smoke.mjs --binary "$BINARY"
+
+      - name: Verify macOS signing secrets
+        if: contains(matrix.target, 'apple-darwin')
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for secret in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!secret}" ]; then
+              echo "Missing required macOS signing/notarization secret: $secret"
+              exit 1
+            fi
+          done
+
       - name: Build and release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -102,6 +143,12 @@ jobs:
           APPIMAGELAUNCHER_DISABLE: 1
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           ANTIGRAVITY_CLIENT_ID: ${{ secrets.ANTIGRAVITY_CLIENT_ID }}
           ANTIGRAVITY_CLIENT_SECRET: ${{ secrets.ANTIGRAVITY_CLIENT_SECRET }}
         with:
@@ -193,7 +240,7 @@ jobs:
 
           echo "sidecar_version=$SIDECAR_VERSION" >> $GITHUB_OUTPUT
 
-          # Extract key fixes/features from CLIProxyAPIPlus changelog (filter out merge commits)
+          # Extract key fixes/features from the selected CLIProxyAPI changelog (filter out merge commits)
           SIDECAR_HIGHLIGHTS=""
           if [ -n "$SIDECAR_BODY" ]; then
             # Extract lines with fix/feat/Fixed and format them

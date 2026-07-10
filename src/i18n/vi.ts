@@ -421,9 +421,6 @@ export const vi = {
       modelsConfigured: "Mô hình đã cấu hình",
       total: "tổng cộng",
     },
-    chatgptPlusPromo:
-      "🔥 ChatGPT Plus 1 tháng chỉ 35K\n👉 Mua ngay: https://t.me/AI_Shop1998_bot",
-    chatgptPlusPromoCta: "Mua ngay",
     kiro: {
       title: "Hạn mức Kiro",
     },
