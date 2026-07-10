@@ -126,12 +126,6 @@ jobs:
           APPIMAGELAUNCHER_DISABLE: 1
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           ANTIGRAVITY_CLIENT_ID: ${{ secrets.ANTIGRAVITY_CLIENT_ID }}
           ANTIGRAVITY_CLIENT_SECRET: ${{ secrets.ANTIGRAVITY_CLIENT_SECRET }}
         with:
@@ -146,8 +140,8 @@ jobs:
 
             | Platform | Download |
             |----------|----------|
-            | macOS (Apple Silicon) | `.dmg` (aarch64) |
-            | macOS (Intel) | `.dmg` (x64) |
+            | macOS (Apple Silicon) | Unsigned, not notarized `.dmg` (aarch64) |
+            | macOS (Intel) | Unsigned, not notarized `.dmg` (x64) |
             | Windows | `.exe` installer |
             | Windows (Portable) | `.zip` (no install required) |
             | Linux | `.deb` package |
@@ -275,8 +269,8 @@ jobs:
             echo ""
             echo "| Platform | Download |"
             echo "|----------|----------|"
-            echo "| macOS (Apple Silicon) | \`.dmg\` (aarch64) |"
-            echo "| macOS (Intel) | \`.dmg\` (x64) |"
+            echo "| macOS (Apple Silicon) | Unsigned, not notarized \`.dmg\` (aarch64) |"
+            echo "| macOS (Intel) | Unsigned, not notarized \`.dmg\` (x64) |"
             echo "| Windows | \`.exe\` installer |"
             echo "| Windows (Portable) | \`.zip\` (no install required) |"
             echo "| Linux | \`.deb\` package |"
