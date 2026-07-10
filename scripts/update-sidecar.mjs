@@ -3,6 +3,7 @@
 // Works on macOS, Linux, and Windows (Node 18+)
 
 import { execSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -137,6 +138,73 @@ function validateBinary(filePath) {
   }
 }
 
+/**
+ * Fetch checksums.txt from the release and verify the downloaded archive's SHA-256.
+ * Fails closed: missing entry or hash mismatch throw an error.
+ * Returns the verified buffer on success.
+ */
+async function verifyChecksum(repo, version, assetName, buffer) {
+  const checksumsUrl = `https://github.com/${repo}/releases/download/v${version}/checksums.txt`;
+
+  console.log(`Fetching checksums from ${checksumsUrl}...`);
+
+  const res = await fetch(checksumsUrl, { redirect: "follow" });
+  if (!res.ok) {
+    throw new Error(
+      `checksums.txt download failed (${res.status}) for ${checksumsUrl}. ` +
+        `Cannot verify asset integrity without checksums.`,
+    );
+  }
+
+  const checksumsText = await res.text();
+  const checksums = parseChecksums(checksumsText);
+
+  const expectedHash = checksums.get(assetName);
+  if (!expectedHash) {
+    throw new Error(
+      `No checksum entry found for "${assetName}" in checksums.txt. ` +
+        `Available entries: ${[...checksums.keys()].join(", ")}`,
+    );
+  }
+
+  const actualHash = createHash("sha256").update(buffer).digest("hex");
+
+  if (actualHash !== expectedHash) {
+    // Normalize: both lowercase
+    const a = actualHash.toLowerCase();
+    const e = expectedHash.toLowerCase();
+    if (a !== e) {
+      throw new Error(
+        `SHA-256 mismatch for "${assetName}".\n` +
+          `  Expected: ${e}\n` +
+          `  Actual:   ${a}`,
+      );
+    }
+  }
+
+  console.log(`Checksum verified for ${assetName}`);
+}
+
+/**
+ * Parse a checksums.txt file content into a Map of filename → sha256 hex string.
+ * Supports both:
+ *   <hash>  <filename>    (standard shasum -a256 output, two spaces)
+ *   <hash> *<filename>    (binary mode, starred)
+ */
+export function parseChecksums(content) {
+  const map = new Map();
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    // Match: <64-char-hex>  <optional-mode><filename>
+    const m = trimmed.match(/^([a-fA-F0-9]{64})\s+[ *]?(.+)$/);
+    if (m) {
+      map.set(m[2].trim(), m[1].toLowerCase());
+    }
+  }
+  return map;
+}
+
 function getCurrentTarget() {
   const { platform, arch } = process;
   const targets = {
@@ -229,6 +297,9 @@ async function downloadTarget(target, version, channelConfig, releaseAssets = nu
   const res = await fetch(url, { redirect: "follow" });
   if (!res.ok) throw new Error(`Download failed (${res.status}): ${url}`);
   const buffer = Buffer.from(await res.arrayBuffer());
+
+  // Verify archive integrity against checksums.txt before any filesystem writes
+  await verifyChecksum(channelConfig.repo, version, assetName, buffer);
 
   const tempDir = join(BINARIES_DIR, ".tmp-download");
   mkdirSync(tempDir, { recursive: true });
