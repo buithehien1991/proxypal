@@ -27,9 +27,12 @@ fn find_cloudflared_path() -> Option<String> {
         "C:\\Program Files\\cloudflared\\cloudflared.exe",
         "C:\\Program Files (x86)\\cloudflared\\cloudflared.exe",
         // User local bin
-        &format!("{}/.local/bin/cloudflared", std::env::var("HOME").unwrap_or_default()),
+        &format!(
+            "{}/.local/bin/cloudflared",
+            std::env::var("HOME").unwrap_or_default()
+        ),
     ];
-    
+
     for path in possible_paths {
         if path == "cloudflared" {
             // Check if it's in PATH using `which` or `where`
@@ -70,7 +73,7 @@ fn find_cloudflared_path() -> Option<String> {
             return Some(path.to_string());
         }
     }
-    
+
     None
 }
 
@@ -102,50 +105,57 @@ impl CloudflareManager {
     pub fn connect(&self, app: AppHandle, config: CloudflareConfig) {
         let tunnels = self.tunnels.clone();
         let config_id = config.id.clone();
-        
+
         // Remove existing tunnel if any
         self.disconnect(&config.id);
 
         let notify_stop = Arc::new(Notify::new());
         let notify_clone = notify_stop.clone();
         let config_clone = config.clone();
-        
+
         let emit_status = move |status: &str, msg: Option<String>, url: Option<String>| {
-            let _ = app.emit("cloudflare-status-changed", CloudflareStatusUpdate {
-                id: config_clone.id.clone(),
-                status: status.to_string(),
-                message: msg,
-                url,
-            });
+            let _ = app.emit(
+                "cloudflare-status-changed",
+                CloudflareStatusUpdate {
+                    id: config_clone.id.clone(),
+                    status: status.to_string(),
+                    message: msg,
+                    url,
+                },
+            );
         };
 
         let emit_status_clone = emit_status.clone();
 
         let handle = tauri::async_runtime::spawn(async move {
             emit_status_clone("connecting", Some("Starting tunnel...".into()), None);
-            
+
             // Find cloudflared binary - check common installation paths
             // GUI apps on macOS don't inherit terminal PATH, so we need to check manually
             let cloudflared_path = find_cloudflared_path();
-            
+
             if cloudflared_path.is_none() {
-                emit_status_clone("error", Some("cloudflared not found. Please install it first.".into()), None);
+                emit_status_clone(
+                    "error",
+                    Some("cloudflared not found. Please install it first.".into()),
+                    None,
+                );
                 return;
             }
             let cloudflared_bin = cloudflared_path.unwrap();
-            
+
             let mut retry_count = 0;
             const MAX_RETRIES: u32 = 3;
-            
+
             loop {
                 // For named tunnels with tokens from Cloudflare Dashboard:
                 // The ingress rules (including URL routing) are configured in the dashboard
                 // So we only need: cloudflared tunnel run --token <token>
-                // 
+                //
                 // For quick tunnels (no token, just expose a port):
                 // cloudflared tunnel --url http://localhost:<port>
                 let mut cmd = Command::new(&cloudflared_bin);
-                
+
                 if config.tunnel_token.is_empty() {
                     // Quick tunnel mode - expose local port directly
                     cmd.arg("tunnel");
@@ -160,12 +170,16 @@ impl CloudflareManager {
                     cmd.arg(&config.tunnel_token);
                 }
 
-                emit_status_clone("connecting", Some(format!("Connecting to port {}...", config.local_port)), None);
+                emit_status_clone(
+                    "connecting",
+                    Some(format!("Connecting to port {}...", config.local_port)),
+                    None,
+                );
 
                 cmd.stdout(std::process::Stdio::piped())
-                   .stderr(std::process::Stdio::piped())
-                   .stdin(std::process::Stdio::null());
-                   
+                    .stderr(std::process::Stdio::piped())
+                    .stdin(std::process::Stdio::null());
+
                 #[cfg(windows)]
                 {
                     const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -177,57 +191,79 @@ impl CloudflareManager {
                 match cmd.spawn() {
                     Ok(mut child) => {
                         emit_status_clone("connecting", Some("Authenticating...".into()), None);
-                        
+
                         let stderr = child.stderr.take();
                         let emit_output = emit_status_clone.clone();
                         let is_connected = Arc::new(AtomicBool::new(false));
                         let is_connected_clone = is_connected.clone();
-                        
+
                         // Spawn a task to read stderr and detect connection status
                         let stderr_reader = tauri::async_runtime::spawn(async move {
                             use tokio::io::{AsyncBufReadExt, BufReader};
-                            
+
                             let mut detected_url: Option<String> = None;
-                            
+
                             if let Some(stderr) = stderr {
                                 let reader = BufReader::new(stderr);
                                 let mut lines = reader.lines();
-                                
+
                                 while let Ok(Some(line)) = lines.next_line().await {
                                     let line_lower = line.to_lowercase();
-                                    
+
                                     // Debug: log all lines for troubleshooting
                                     #[cfg(debug_assertions)]
                                     println!("[cloudflared] {}", line);
-                                    
+
                                     // Detect successful connection - cloudflared logs these on success:
                                     // "INF Connection ... registered connIndex=..."
                                     // "INF Registered tunnel connection connIndex=..."
-                                    if line_lower.contains("registered") && 
-                                       (line_lower.contains("connection") || line_lower.contains("connindex")) {
+                                    if line_lower.contains("registered")
+                                        && (line_lower.contains("connection")
+                                            || line_lower.contains("connindex"))
+                                    {
                                         is_connected_clone.store(true, Ordering::SeqCst);
-                                        emit_output("connected", Some("Tunnel established".into()), detected_url.clone());
-                                    } 
+                                        emit_output(
+                                            "connected",
+                                            Some("Tunnel established".into()),
+                                            detected_url.clone(),
+                                        );
+                                    }
                                     // Quick tunnel URL detection
-                                    else if line.contains(".trycloudflare.com") || line.contains(".cfargotunnel.com") {
+                                    else if line.contains(".trycloudflare.com")
+                                        || line.contains(".cfargotunnel.com")
+                                    {
                                         if let Some(url_start) = line.find("https://") {
-                                            let url = line[url_start..].split_whitespace().next().unwrap_or("");
+                                            let url = line[url_start..]
+                                                .split_whitespace()
+                                                .next()
+                                                .unwrap_or("");
                                             detected_url = Some(url.to_string());
                                             is_connected_clone.store(true, Ordering::SeqCst);
-                                            emit_output("connected", Some("Tunnel ready".into()), detected_url.clone());
+                                            emit_output(
+                                                "connected",
+                                                Some("Tunnel ready".into()),
+                                                detected_url.clone(),
+                                            );
                                         }
                                     }
                                     // Detect errors (but ignore config info containing "error" word)
-                                    else if line_lower.contains("err ") || 
-                                            (line_lower.contains("failed") && !line_lower.contains("failed to parse")) ||
-                                            line_lower.contains("unable to") {
+                                    else if line_lower.contains("err ")
+                                        || (line_lower.contains("failed")
+                                            && !line_lower.contains("failed to parse"))
+                                        || line_lower.contains("unable to")
+                                    {
                                         emit_output("error", Some(line.clone()), None);
                                     }
                                     // Connector established
-                                    else if line_lower.contains("initial protocol") || 
-                                            line_lower.contains("connection established") {
+                                    else if line_lower.contains("initial protocol")
+                                        || line_lower.contains("connection established")
+                                    {
                                         is_connected_clone.store(true, Ordering::SeqCst);
-                                        emit_output("connected", Some("Tunnel connected".into()), detected_url.clone());
+                                        emit_output(
+                                            "connected",
+                                            Some("Tunnel connected".into()),
+                                            detected_url.clone(),
+                                        );
                                     }
                                 }
                             }
@@ -250,7 +286,7 @@ impl CloudflareManager {
                                         emit_status_clone("error", Some(format!("Process error: {}", e)), None);
                                     }
                                 }
-                                
+
                                 // Only retry if we were connected (unexpected disconnect)
                                 // or if we haven't exceeded retry count
                                 if is_connected.load(Ordering::SeqCst) {
@@ -272,7 +308,7 @@ impl CloudflareManager {
                                 break;
                             }
                         }
-                    },
+                    }
                     Err(e) => {
                         let error_msg = if e.kind() == std::io::ErrorKind::NotFound {
                             "cloudflared not found. Please install it first.".to_string()
@@ -280,20 +316,24 @@ impl CloudflareManager {
                             format!("Failed to start: {}", e)
                         };
                         emit_status_clone("error", Some(error_msg), None);
-                        
+
                         // Don't retry if cloudflared is not found
                         if e.kind() == std::io::ErrorKind::NotFound {
                             break;
                         }
-                        
+
                         retry_count += 1;
                         if retry_count >= MAX_RETRIES {
-                            emit_status_clone("error", Some("Failed to start after multiple attempts".into()), None);
+                            emit_status_clone(
+                                "error",
+                                Some("Failed to start after multiple attempts".into()),
+                                None,
+                            );
                             break;
                         }
                     }
                 }
-                
+
                 // Wait before retry
                 tokio::select! {
                     _ = tokio::time::sleep(Duration::from_secs(5)) => {}
@@ -305,10 +345,13 @@ impl CloudflareManager {
             }
         });
 
-        tunnels.lock().unwrap().insert(config_id, RunningTunnel {
-            notify_stop,
-            handle,
-        });
+        tunnels.lock().unwrap().insert(
+            config_id,
+            RunningTunnel {
+                notify_stop,
+                handle,
+            },
+        );
     }
 
     pub fn disconnect(&self, id: &str) {
@@ -317,7 +360,7 @@ impl CloudflareManager {
             tunnel.notify_stop.notify_one();
         }
     }
-    
+
     #[allow(dead_code)]
     pub fn disconnect_all(&self) {
         println!("[Cloudflare Manager] Shutting down all tunnels...");
@@ -331,11 +374,11 @@ impl CloudflareManager {
 
     #[allow(dead_code)]
     pub fn get_status(&self, id: &str) -> String {
-       let tunnels = self.tunnels.lock().unwrap();
-       if tunnels.contains_key(id) {
-           "active".to_string()
-       } else {
-           "inactive".to_string()
-       }
+        let tunnels = self.tunnels.lock().unwrap();
+        if tunnels.contains_key(id) {
+            "active".to_string()
+        } else {
+            "inactive".to_string()
+        }
     }
 }
