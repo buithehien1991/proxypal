@@ -50,7 +50,7 @@ Per-platform matrix:
 | Platform         | Target Arch | Runner OS        | Primary artifact                    | Also included      |
 | ---------------- | ----------- | ---------------- | ----------------------------------- | ------------------ |
 | macOS            | ARM64       | `macos-latest`   | `ProxyPal_<VERSION>_aarch64.dmg`    | `.tar.gz` variant  |
-| macOS            | x86_64      | `macos-13`       | `ProxyPal_<VERSION>_x64.dmg`        | `.tar.gz` variant  |
+| macOS            | x86_64      | `macos-15-intel` | `ProxyPal_<VERSION>_x64.dmg`        | `.tar.gz` variant  |
 | Windows          | x86_64      | `windows-latest` | `ProxyPal_<VERSION>_x64.msi`        | `.msi.zip`         |
 | Linux (deb)      | amd64       | `ubuntu-latest`  | `ProxyPal_<VERSION>_amd64.deb`      | `AppImage`, `.rpm` |
 | Linux (AppImage) | amd64       | `ubuntu-latest`  | `ProxyPal_<VERSION>_amd64.AppImage` | —                  |
