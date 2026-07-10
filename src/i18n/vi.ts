@@ -409,6 +409,8 @@ export const vi = {
       title: "Hạn mức Antigravity",
       view: "Chế độ xem",
     },
+    chatgptPlusPromo: "🔥 ChatGPT Plus 1 tháng chỉ 35K\n👉 Mua ngay: https://t.me/AI_Shop1998_bot",
+    chatgptPlusPromoCta: "Mua ngay",
     checklist: {
       configureAgent: "Cấu hình Agent",
       configureAgentDescription: "Thiết lập Cursor, Claude Code, v.v.",
@@ -417,14 +419,12 @@ export const vi = {
       connectProviderDescription: "Liên kết Claude, Gemini hoặc ChatGPT",
       setup: "Thiết lập",
     },
+
     commandPalette: "Bảng lệnh (⌘K)",
     configModal: {
       modelsConfigured: "Mô hình đã cấu hình",
       total: "tổng cộng",
     },
-    chatgptPlusPromo:
-      "🔥 ChatGPT Plus 1 tháng chỉ 35K\n👉 Mua ngay: https://t.me/AI_Shop1998_bot",
-    chatgptPlusPromoCta: "Mua ngay",
     kiro: {
       title: "Hạn mức Kiro",
     },

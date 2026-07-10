@@ -403,6 +403,9 @@ export const zhCN = {
       title: "Antigravity 配额",
       view: "视图",
     },
+    chatgptPlusPromo:
+      "🔥 1 个月 ChatGPT Plus — 仅需 $1.33\n👉 立即购买：https://t.me/AI_Shop1998_bot",
+    chatgptPlusPromoCta: "立即购买",
     checklist: {
       configureAgent: "配置 Agent",
       configureAgentDescription: "配置 Cursor、Claude Code 等",
@@ -411,14 +414,13 @@ export const zhCN = {
       connectProviderDescription: "连接 Claude、Gemini 或 ChatGPT",
       setup: "设置",
     },
+
     commandPalette: "命令面板 (⌘K)",
     configModal: {
       modelsConfigured: "已配置模型",
       total: "总计",
     },
-    chatgptPlusPromo:
-      "🔥 1 个月 ChatGPT Plus — 仅需 $1.33\n👉 立即购买：https://t.me/AI_Shop1998_bot",
-    chatgptPlusPromoCta: "立即购买",
+
     kiro: {
       title: "Kiro 配额",
     },

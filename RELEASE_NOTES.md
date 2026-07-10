@@ -1,4 +1,4 @@
-# ProxyPal v0.4.45
+# ProxyPal v0.4.46
 
 **Released:** 2026-07-10
 

@@ -411,6 +411,9 @@ export const en = {
       title: "Antigravity Quota",
       view: "View",
     },
+    chatgptPlusPromo:
+      "🔥 1-Month ChatGPT Plus — Only $1.33\n👉 Buy now: https://t.me/AI_Shop1998_bot",
+    chatgptPlusPromoCta: "Buy now",
     checklist: {
       configureAgent: "Configure an agent",
       configureAgentDescription: "Set up Cursor, Claude Code, etc.",
@@ -419,14 +422,13 @@ export const en = {
       connectProviderDescription: "Link Claude, Gemini, or ChatGPT",
       setup: "Setup",
     },
+
     commandPalette: "Command Palette (⌘K)",
     configModal: {
       modelsConfigured: "Models Configured",
       total: "total",
     },
-    chatgptPlusPromo:
-      "🔥 1-Month ChatGPT Plus — Only $1.33\n👉 Buy now: https://t.me/AI_Shop1998_bot",
-    chatgptPlusPromoCta: "Buy now",
+
     kiro: {
       title: "Kiro Quota",
     },
