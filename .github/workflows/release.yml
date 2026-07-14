@@ -4,12 +4,21 @@ on:
   push:
     tags:
       - "v*"
+  # Triggered by Sidecar Auto Update (workflow_dispatch) so GITHUB_TOKEN can chain releases.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "App semver without v prefix (must already be committed on the branch, e.g. 0.4.47)"
+        required: true
+        type: string
 
 env:
   CARGO_TERM_COLOR: always
   # Sidecar channel (mainline). Version comes from scripts/sidecar-version
   # (or CLIPROXYAPI_VERSION if set). See scripts/update-sidecar.mjs.
   CLIPROXYAPI_CHANNEL: mainline
+  # Tag used for GitHub Release + updater latest.json
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', github.event.inputs.version) || github.ref_name }}
 
 jobs:
   release:
@@ -62,6 +71,19 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install
+
+      - name: Verify app version matches release tag
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED="${{ github.event.inputs.version }}"
+          ACTUAL=$(node -e "console.log(require('./package.json').version)")
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "package.json version ($ACTUAL) != requested release ($EXPECTED)"
+            exit 1
+          fi
+          echo "Releasing v$ACTUAL (tag ${{ env.RELEASE_TAG }})"
 
       - name: Download CLIProxyAPI sidecar binary
         shell: bash
@@ -130,12 +152,12 @@ jobs:
           ANTIGRAVITY_CLIENT_ID: ${{ secrets.ANTIGRAVITY_CLIENT_ID }}
           ANTIGRAVITY_CLIENT_SECRET: ${{ secrets.ANTIGRAVITY_CLIENT_SECRET }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "ProxyPal ${{ github.ref_name }}"
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: "ProxyPal ${{ env.RELEASE_TAG }}"
           releaseBody: |
             ## What's New
 
-            See the [commits](${{ github.server_url }}/${{ github.repository }}/commits/${{ github.ref_name }}) for details.
+            See the [commits](${{ github.server_url }}/${{ github.repository }}/commits/${{ env.RELEASE_TAG }}) for details.
 
             ## Downloads
 
@@ -147,6 +169,11 @@ jobs:
             | Windows (Portable) | `.zip` (no install required) |
             | Linux | `.deb` package |
             | Linux (Fedora/RHEL) | `.rpm` package |
+
+            ## Updater
+
+            In-app updates resolve:
+            `https://github.com/${{ github.repository }}/releases/latest/download/latest.json`
           releaseDraft: false
           prerelease: false
           updaterJsonPreferNsis: true
@@ -158,7 +185,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $version = "${{ github.ref_name }}"
+          $version = "${{ env.RELEASE_TAG }}"
           $exePath = "src-tauri/target/x86_64-pc-windows-msvc/release/ProxyPal.exe"
 
           if (Test-Path $exePath) {
@@ -193,7 +220,7 @@ jobs:
 
           # Get previous tag
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          CURRENT_TAG="${{ github.ref_name }}"
+          CURRENT_TAG="${{ env.RELEASE_TAG }}"
 
           echo "Previous tag: $PREV_TAG"
           echo "Current tag: $CURRENT_TAG"
@@ -286,7 +313,7 @@ jobs:
           echo "===================="
 
           # Update release with new body
-          gh release edit "${{ github.ref_name }}" --notes-file /tmp/release_body.md || true
+          gh release edit "${{ env.RELEASE_TAG }}" --notes-file /tmp/release_body.md || true
 
   notify:
     name: Discord Notification
@@ -302,12 +329,12 @@ jobs:
         run: |
           # Fetch the release body (which now contains the changelog)
           RELEASE_BODY=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ github.ref_name }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ env.RELEASE_TAG }}" \
             | jq -r '.body // "New version available"')
 
           # Truncate if too long for Discord (max 4096 chars for embed description)
           if [ ${#RELEASE_BODY} -gt 3800 ]; then
-            RELEASE_BODY="${RELEASE_BODY:0:3800}...\n\n[See full changelog](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }})"
+            RELEASE_BODY="${RELEASE_BODY:0:3800}...\n\n[See full changelog](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ env.RELEASE_TAG }})"
           fi
 
           # Escape for JSON
@@ -315,7 +342,7 @@ jobs:
 
           # Send Discord notification with changelog
           curl -H "Content-Type: application/json" \
-            -d "{\"embeds\": [{\"title\": \"🚀 ProxyPal ${{ github.ref_name }} Released!\", \"description\": $RELEASE_BODY, \"color\": 5793266, \"url\": \"${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}\"}]}" \
+            -d "{\"embeds\": [{\"title\": \"🚀 ProxyPal ${{ env.RELEASE_TAG }} Released!\", \"description\": $RELEASE_BODY, \"color\": 5793266, \"url\": \"${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ env.RELEASE_TAG }}\"}]}" \
             $DISCORD_WEBHOOK
 
       - name: Discord notification (failure)
@@ -324,5 +351,5 @@ jobs:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
           curl -H "Content-Type: application/json" \
-            -d "{\"embeds\": [{\"title\": \"❌ ProxyPal Release Failed\", \"description\": \"**Tag:** \`${{ github.ref_name }}\`\n\n[View Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\", \"color\": 15158332}]}" \
+            -d "{\"embeds\": [{\"title\": \"❌ ProxyPal Release Failed\", \"description\": \"**Tag:** \`${{ env.RELEASE_TAG }}\`\n\n[View Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\", \"color\": 15158332}]}" \
             $DISCORD_WEBHOOK

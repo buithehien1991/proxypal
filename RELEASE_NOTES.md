@@ -1,10 +1,22 @@
-# Unreleased (main)
+# ProxyPal v0.4.47
+
+**Released:** 2026-07-14 (fork)
 
 ## Sidecar Upgrade: CLIProxyAPI v7.2.61 → v7.2.73
 
 - Pins the bundled CLIProxyAPI sidecar to **v7.2.73**.
-- CI and Release workflows now read the pin from `scripts/sidecar-version` (no hardcoded version).
-- Adds a daily **Sidecar Auto Update** workflow (00:00 Asia/Ho_Chi_Minh) that pins the latest mainline release and pushes to `main` so CI rebuilds.
+- CI and Release workflows read the pin from `scripts/sidecar-version` (no hardcoded version).
+
+## Fork updater + auto-release
+
+- In-app updater endpoint points to **this fork**:
+  `https://github.com/buithehien1991/proxypal/releases/latest/download/latest.json`
+- Daily **Sidecar Auto Update** (00:00 Asia/Ho_Chi_Minh): if CLIProxyAPI has a new release, bumps app patch version, pushes `main`, and triggers **Release** (GitHub Release + `latest.json`).
+- Manual release: `Actions → Release → Run workflow` with version, or `git tag vX.Y.Z && git push origin vX.Y.Z`.
+
+### Signing note
+
+OTA install still needs secrets `TAURI_SIGNING_PRIVATE_KEY` (+ password) matching the `pubkey` in `src-tauri/tauri.conf.json`. Without them, installers still publish on Releases; signed auto-update may fail verification.
 
 ---
 

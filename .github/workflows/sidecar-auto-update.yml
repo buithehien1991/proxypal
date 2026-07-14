@@ -1,9 +1,17 @@
 # Daily check for a newer CLIProxyAPI release.
-# If scripts/sidecar-version is behind latest mainline, pin the new version,
-# push to main, and CI will rebuild all platforms automatically.
+# If scripts/sidecar-version is behind latest mainline:
+#   1. Pin the new sidecar version
+#   2. Bump ProxyPal app patch version (0.4.x → 0.4.x+1)
+#   3. Commit + push to main
+#   4. Trigger the Release workflow (creates GitHub Release + latest.json for in-app updater)
 #
-# Schedule: 00:00 Asia/Ho_Chi_Minh (17:00 UTC previous calendar day).
+# Schedule: 00:00 Asia/Ho_Chi_Minh (17:00 UTC).
 # Manual: Actions → Sidecar Auto Update → Run workflow.
+#
+# In-app updater endpoint is this fork:
+#   https://github.com/buithehien1991/proxypal/releases/latest/download/latest.json
+# For signed OTA updates, set secrets TAURI_SIGNING_PRIVATE_KEY (+ password) matching
+# the pubkey in src-tauri/tauri.conf.json.
 
 name: Sidecar Auto Update
 
@@ -17,26 +25,36 @@ on:
         description: "Optional: pin this CLIProxyAPI version (e.g. 7.2.73). Leave empty to use latest."
         required: false
         type: string
+      skip_release:
+        description: "Only bump pin/version on main; do not trigger Release"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
+  actions: write
 
 env:
   SIDECAR_REPO: router-for-me/CLIProxyAPI
 
 jobs:
   update:
-    name: Check and pin latest sidecar
+    name: Bump sidecar + app version + release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Need full history + token that can push to default branch
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
-      - name: Resolve target version
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Resolve target sidecar version
         id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
@@ -46,36 +64,40 @@ jobs:
 
           CURRENT=$(tr -d '[:space:]' < scripts/sidecar-version | sed 's/^v//')
           echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
-          echo "Pinned: $CURRENT"
+          echo "Pinned sidecar: $CURRENT"
 
           if [ -n "${FORCE_VERSION:-}" ]; then
             TARGET=$(echo "$FORCE_VERSION" | sed 's/^v//')
-            echo "Using forced version: $TARGET"
+            echo "Using forced sidecar version: $TARGET"
           else
             TARGET=$(gh release view --repo "$SIDECAR_REPO" --json tagName -q .tagName | sed 's/^v//')
-            echo "Latest upstream: $TARGET"
+            echo "Latest upstream sidecar: $TARGET"
           fi
 
           echo "target=$TARGET" >> "$GITHUB_OUTPUT"
 
           if [ "$CURRENT" = "$TARGET" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "Already on $TARGET — nothing to do."
+            echo "Already on sidecar $TARGET — nothing to do."
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Will update $CURRENT → $TARGET"
+            echo "Will update sidecar $CURRENT → $TARGET"
           fi
 
-      - name: Update pin and push
+      - name: Bump pin, app version, push, trigger release
         if: steps.resolve.outputs.changed == 'true'
+        id: bump
         env:
+          GH_TOKEN: ${{ github.token }}
           TARGET: ${{ steps.resolve.outputs.target }}
           CURRENT: ${{ steps.resolve.outputs.current }}
+          SKIP_RELEASE: ${{ github.event.inputs.skip_release || false }}
         run: |
           set -euo pipefail
 
-          # Verify the release tag exists and has assets (fail closed)
           STATUS=$(curl -sS -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${SIDECAR_REPO}/releases/tags/v${TARGET}")
           if [ "$STATUS" != "200" ]; then
             echo "Release v${TARGET} not found on ${SIDECAR_REPO} (HTTP $STATUS)"
@@ -84,28 +106,53 @@ jobs:
 
           printf '%s\n' "$TARGET" > scripts/sidecar-version
 
+          APP_VERSION=$(node scripts/bump-version.mjs | tail -n 1)
+          echo "app_version=$APP_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Bumped app version to $APP_VERSION"
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add scripts/sidecar-version
-          git commit -m "chore: bump CLIProxyAPI sidecar to v${TARGET}"
+          git add scripts/sidecar-version package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git commit -m "release: v${APP_VERSION} (CLIProxyAPI v${TARGET})
+
+          Auto-bump from Sidecar Auto Update workflow.
+          - Sidecar: v${CURRENT} → v${TARGET}
+          - App: patch bump to ${APP_VERSION}
+          "
+
           git push origin HEAD:${{ github.ref_name }}
 
-          echo "Pushed pin v${CURRENT} → v${TARGET}. CI on main will rebuild."
+          if [ "$SKIP_RELEASE" = "true" ]; then
+            echo "skip_release=true" >> "$GITHUB_OUTPUT"
+            echo "Skip Release requested — version committed only."
+            exit 0
+          fi
+
+          # GITHUB_TOKEN push of tags does not chain into other workflows; use workflow_dispatch.
+          gh workflow run Release.yml \
+            --ref "${{ github.ref_name }}" \
+            -f version="${APP_VERSION}"
+
+          echo "skip_release=false" >> "$GITHUB_OUTPUT"
+          echo "Triggered Release for v${APP_VERSION}"
 
       - name: Summary
         run: |
           {
             echo "## Sidecar auto-update"
             echo ""
-            echo "- **Pinned before:** \`${{ steps.resolve.outputs.current }}\`"
-            echo "- **Target:** \`${{ steps.resolve.outputs.target }}\`"
+            echo "- **Sidecar before:** \`${{ steps.resolve.outputs.current }}\`"
+            echo "- **Sidecar target:** \`${{ steps.resolve.outputs.target }}\`"
             echo "- **Updated:** \`${{ steps.resolve.outputs.changed }}\`"
             if [ "${{ steps.resolve.outputs.changed }}" = "true" ]; then
+              echo "- **App version:** \`v${{ steps.bump.outputs.app_version }}\`"
+              echo "- **Release triggered:** \`$([ "${{ steps.bump.outputs.skip_release }}" = "true" ] && echo no || echo yes)\`"
               echo ""
-              echo "Pushed to \`${{ github.ref_name }}\`. Watch the **CI** workflow for multi-platform build artifacts."
+              echo "In-app updates use:"
+              echo "\`https://github.com/${{ github.repository }}/releases/latest/download/latest.json\`"
             else
               echo ""
-              echo "No change — skip build."
+              echo "No change — skip release."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
