@@ -18,8 +18,9 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Sidecar channel (mainline by default). Version comes from scripts/sidecar-version
+  # (or CLIPROXYAPI_VERSION if set). See scripts/update-sidecar.mjs.
   CLIPROXYAPI_CHANNEL: ${{ github.event.inputs.sidecar_channel || 'mainline' }}
-  CLIPROXYAPI_VERSION: "7.2.61"
 
 jobs:
   check:

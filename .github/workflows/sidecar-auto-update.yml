@@ -1,0 +1,111 @@
+# Daily check for a newer CLIProxyAPI release.
+# If scripts/sidecar-version is behind latest mainline, pin the new version,
+# push to main, and CI will rebuild all platforms automatically.
+#
+# Schedule: 00:00 Asia/Ho_Chi_Minh (17:00 UTC previous calendar day).
+# Manual: Actions → Sidecar Auto Update → Run workflow.
+
+name: Sidecar Auto Update
+
+on:
+  schedule:
+    # 00:00 Vietnam (UTC+7) = 17:00 UTC
+    - cron: "0 17 * * *"
+  workflow_dispatch:
+    inputs:
+      force_version:
+        description: "Optional: pin this CLIProxyAPI version (e.g. 7.2.73). Leave empty to use latest."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  SIDECAR_REPO: router-for-me/CLIProxyAPI
+
+jobs:
+  update:
+    name: Check and pin latest sidecar
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Need full history + token that can push to default branch
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Resolve target version
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE_VERSION: ${{ github.event.inputs.force_version }}
+        run: |
+          set -euo pipefail
+
+          CURRENT=$(tr -d '[:space:]' < scripts/sidecar-version | sed 's/^v//')
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "Pinned: $CURRENT"
+
+          if [ -n "${FORCE_VERSION:-}" ]; then
+            TARGET=$(echo "$FORCE_VERSION" | sed 's/^v//')
+            echo "Using forced version: $TARGET"
+          else
+            TARGET=$(gh release view --repo "$SIDECAR_REPO" --json tagName -q .tagName | sed 's/^v//')
+            echo "Latest upstream: $TARGET"
+          fi
+
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+
+          if [ "$CURRENT" = "$TARGET" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Already on $TARGET — nothing to do."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Will update $CURRENT → $TARGET"
+          fi
+
+      - name: Update pin and push
+        if: steps.resolve.outputs.changed == 'true'
+        env:
+          TARGET: ${{ steps.resolve.outputs.target }}
+          CURRENT: ${{ steps.resolve.outputs.current }}
+        run: |
+          set -euo pipefail
+
+          # Verify the release tag exists and has assets (fail closed)
+          STATUS=$(curl -sS -o /dev/null -w "%{http_code}" \
+            "https://api.github.com/repos/${SIDECAR_REPO}/releases/tags/v${TARGET}")
+          if [ "$STATUS" != "200" ]; then
+            echo "Release v${TARGET} not found on ${SIDECAR_REPO} (HTTP $STATUS)"
+            exit 1
+          fi
+
+          printf '%s\n' "$TARGET" > scripts/sidecar-version
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add scripts/sidecar-version
+          git commit -m "chore: bump CLIProxyAPI sidecar to v${TARGET}"
+          git push origin HEAD:${{ github.ref_name }}
+
+          echo "Pushed pin v${CURRENT} → v${TARGET}. CI on main will rebuild."
+
+      - name: Summary
+        run: |
+          {
+            echo "## Sidecar auto-update"
+            echo ""
+            echo "- **Pinned before:** \`${{ steps.resolve.outputs.current }}\`"
+            echo "- **Target:** \`${{ steps.resolve.outputs.target }}\`"
+            echo "- **Updated:** \`${{ steps.resolve.outputs.changed }}\`"
+            if [ "${{ steps.resolve.outputs.changed }}" = "true" ]; then
+              echo ""
+              echo "Pushed to \`${{ github.ref_name }}\`. Watch the **CI** workflow for multi-platform build artifacts."
+            else
+              echo ""
+              echo "No change — skip build."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

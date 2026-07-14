@@ -1,3 +1,13 @@
+# Unreleased (main)
+
+## Sidecar Upgrade: CLIProxyAPI v7.2.61 → v7.2.73
+
+- Pins the bundled CLIProxyAPI sidecar to **v7.2.73**.
+- CI and Release workflows now read the pin from `scripts/sidecar-version` (no hardcoded version).
+- Adds a daily **Sidecar Auto Update** workflow (00:00 Asia/Ho_Chi_Minh) that pins the latest mainline release and pushes to `main` so CI rebuilds.
+
+---
+
 # ProxyPal v0.4.46
 
 **Released:** 2026-07-10
